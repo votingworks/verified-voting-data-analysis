@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract all zip files from data/downloads to data directory."""
+"""Extract all zip files from data/downloads to data/verifier-original directory."""
 
 import os
 import zipfile
@@ -7,7 +7,10 @@ from pathlib import Path
 
 def extract_all_zips():
     downloads_dir = Path("data/downloads")
-    extract_to_dir = Path("data")
+    extract_to_dir = Path("data/verifier-original")
+
+    # Ensure extraction directory exists
+    extract_to_dir.mkdir(parents=True, exist_ok=True)
 
     # Find all zip files
     zip_files = list(downloads_dir.glob("*.zip"))

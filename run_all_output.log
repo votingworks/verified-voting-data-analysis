@@ -1,0 +1,119 @@
+================================================================================
+RUNNING COMPLETE DATA PROCESSING PIPELINE
+================================================================================
+
+Phase 0: Extracting and processing source data...
+--------------------------------------------------------------------------------
+  Extracting verifier zip files... ✓
+  Processing HAVA funding HTML... ✓
+
+Phase 1: Condensing jurisdiction data for 11 years...
+--------------------------------------------------------------------------------
+[1/11] 2006
+    Condensing... ✓
+
+[2/11] 2008
+    Condensing... ✓
+
+[3/11] 2010
+    Condensing... ✓
+
+[4/11] 2012
+    Condensing... ✓
+
+[5/11] 2014
+    Condensing... ✓
+
+[6/11] 2016
+    Condensing... ✓
+
+[7/11] 2018
+    Condensing... ✓
+
+[8/11] 2020
+    Condensing... ✓
+
+[9/11] 2022
+    Condensing... ✓
+
+[10/11] 2024
+    Condensing... ✓
+
+[11/11] 2026
+    Condensing... ✓
+
+
+Phase 2: Generating summary reports for 11 years...
+--------------------------------------------------------------------------------
+[1/11] 2006
+    Generating report... ✓
+
+[2/11] 2008
+    Generating report... ✓
+
+[3/11] 2010
+    Generating report... ✓
+
+[4/11] 2012
+    Generating report... ✓
+
+[5/11] 2014
+    Generating report... ✓
+
+[6/11] 2016
+    Generating report... ✓
+
+[7/11] 2018
+    Generating report... ✓
+
+[8/11] 2020
+    Generating report... ✓
+
+[9/11] 2022
+    Generating report... ✓
+
+[10/11] 2024
+    Generating report... ✓
+
+[11/11] 2026
+    Generating report... ✓
+
+
+Phase 3: Generating turnover analysis...
+--------------------------------------------------------------------------------
+  Analyzing equipment turnovers... ✓
+
+
+Phase 4: Running data quality tools...
+--------------------------------------------------------------------------------
+  Finding duplicate equipment... ✓
+
+  Reporting unique condensed values... ✓
+
+  Reporting anomaly details... ✓
+
+  Analyzing jurisdiction trends... ✓
+
+  Analyzing within-system turnover patterns... ✓
+
+  Analyzing equipment lifecycle distribution... ✓
+
+  Analyzing vendor turnover patterns... ✓
+
+  Analyzing vendor market share over time... ✓
+
+
+================================================================================
+PIPELINE SUMMARY
+================================================================================
+✓ Successfully completed all pipeline steps!
+
+Generated outputs:
+  - Extracted verifier data for 11 years
+  - 11 condensed CSV files
+  - 11 summary reports
+  - Turnover analysis files:
+    • data/between_system_turnovers.csv
+    • data/within_system_turnovers.csv
+  - Data quality reports in data_quality_tools/
+  - Equipment analysis charts in equipment_analysis/

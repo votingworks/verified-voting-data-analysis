@@ -1,0 +1,5 @@
+data/verifier-original
+data/verifier-condensed
+*.txt
+*.png
+data/*.csv

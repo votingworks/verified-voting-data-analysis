@@ -7,6 +7,12 @@ Creates two separate graphs:
 2. Registered voters in jurisdictions with electronic poll books over time
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import utilities
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from utilities import load_all_years
@@ -79,8 +85,8 @@ for i, (year, count) in enumerate(zip(years, electronic_jurisdictions)):
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.7))
 
 plt.tight_layout()
-plt.savefig('analysis_output/charts/pollbook_adoption_jurisdictions_timeseries.png', dpi=300, bbox_inches='tight')
-print("\n✓ Chart 1 saved to analysis_output/charts/pollbook_adoption_jurisdictions_timeseries.png")
+plt.savefig('pollbook/pollbook_adoption_jurisdictions_timeseries.png', dpi=300, bbox_inches='tight')
+print("\n✓ Chart 1 saved to pollbook/pollbook_adoption_jurisdictions_timeseries.png")
 
 # Create second graph: Voters in jurisdictions with electronic poll books
 fig2, ax2 = plt.subplots(figsize=(12, 7))
@@ -109,8 +115,8 @@ for i, (year, count) in enumerate(zip(years, electronic_voters_millions)):
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.7))
 
 plt.tight_layout()
-plt.savefig('analysis_output/charts/pollbook_adoption_voters_timeseries.png', dpi=300, bbox_inches='tight')
-print("✓ Chart 2 saved to analysis_output/charts/pollbook_adoption_voters_timeseries.png")
+plt.savefig('pollbook/pollbook_adoption_voters_timeseries.png', dpi=300, bbox_inches='tight')
+print("✓ Chart 2 saved to pollbook/pollbook_adoption_voters_timeseries.png")
 
 # Create third graph: Percentage of voters in jurisdictions with electronic poll books
 fig3, ax3 = plt.subplots(figsize=(12, 7))
@@ -140,8 +146,8 @@ for i, (year, pct) in enumerate(zip(years, voter_percentages)):
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.7))
 
 plt.tight_layout()
-plt.savefig('analysis_output/charts/pollbook_adoption_voters_percentage_timeseries.png', dpi=300, bbox_inches='tight')
-print("✓ Chart 3 saved to analysis_output/charts/pollbook_adoption_voters_percentage_timeseries.png")
+plt.savefig('pollbook/pollbook_adoption_voters_percentage_timeseries.png', dpi=300, bbox_inches='tight')
+print("✓ Chart 3 saved to pollbook/pollbook_adoption_voters_percentage_timeseries.png")
 
 # Print summary
 print("\n" + "="*60)

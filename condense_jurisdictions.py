@@ -145,6 +145,17 @@ def determine_poll_book_status(equipment_list):
     for pb in poll_books:
         if pb.get('Equipment Type', '') == 'Commercial Electronic Poll Book':
             manufacturer = pb.get('Manufacturer', '').strip()
+
+            # Map acquired manufacturers to their current owners
+            acquisition_map = {
+                'BPro': 'KNOWiNK',
+                'Diebold': 'ES&S',
+                'Premier (Diebold)': 'ES&S'
+            }
+
+            # Apply acquisition mapping
+            manufacturer = acquisition_map.get(manufacturer, manufacturer)
+
             return manufacturer if manufacturer else ""
 
     return ""

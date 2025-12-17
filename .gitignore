@@ -3,3 +3,4 @@ data/verifier-condensed
 *.txt
 *.png
 data/*.csv
+data/state-level

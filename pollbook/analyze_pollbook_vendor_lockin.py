@@ -14,6 +14,12 @@ Outputs:
 4. Survival curves (CSV + Kaplan-Meier chart)
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt

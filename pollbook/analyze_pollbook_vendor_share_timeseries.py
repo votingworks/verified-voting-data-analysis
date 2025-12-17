@@ -7,6 +7,12 @@ Creates two stacked area charts showing market share by:
 2. Percentage of registered voters
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import utilities
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from utilities import load_all_years
@@ -89,8 +95,8 @@ vendor_order = ['Paper', 'In-House', 'Other', 'ES&S', 'Tenex', 'KNOWiNK']
 # Prepare data for stacked area chart
 jurisdiction_data = [vendor_data[v]['jurisdictions'] for v in vendor_order]
 
-# Colors: Paper=Light Grey, In-House=Brown, Other=Orange, ES&S=Dark Blue, Tenex=Dark Green, KNOWiNK=Yellow
-colors = ['#B0B0B0', '#8B4513', '#FF8C00', '#2C5AA0', '#2E7D32', '#FFD700']
+# Colors: Paper=Medium Grey, In-House=Golden Yellow, Other=Purple, ES&S=Blue, Tenex=Green, KNOWiNK=Coral
+colors = ['#808080', '#F4D03F', '#9b59b6', '#3498db', '#27ae60', '#e74c3c']
 
 ax1.stackplot(years, *jurisdiction_data,
               labels=vendor_order,
@@ -107,8 +113,8 @@ ax1.grid(True, alpha=0.3, axis='y')
 ax1.legend(loc='upper left', fontsize=11, framealpha=0.9)
 
 plt.tight_layout()
-plt.savefig('analysis_output/charts/pollbook_vendor_share_jurisdictions_timeseries.png', dpi=300, bbox_inches='tight')
-print("\n✓ Chart 1 saved to analysis_output/charts/pollbook_vendor_share_jurisdictions_timeseries.png")
+plt.savefig('pollbook/pollbook_vendor_share_jurisdictions_timeseries.png', dpi=300, bbox_inches='tight')
+print("\n✓ Chart 1 saved to pollbook/pollbook_vendor_share_jurisdictions_timeseries.png")
 
 # Create second chart: Voters
 fig2, ax2 = plt.subplots(figsize=(14, 8))
@@ -131,8 +137,8 @@ ax2.grid(True, alpha=0.3, axis='y')
 ax2.legend(loc='upper left', fontsize=11, framealpha=0.9)
 
 plt.tight_layout()
-plt.savefig('analysis_output/charts/pollbook_vendor_share_voters_timeseries.png', dpi=300, bbox_inches='tight')
-print("✓ Chart 2 saved to analysis_output/charts/pollbook_vendor_share_voters_timeseries.png")
+plt.savefig('pollbook/pollbook_vendor_share_voters_timeseries.png', dpi=300, bbox_inches='tight')
+print("✓ Chart 2 saved to pollbook/pollbook_vendor_share_voters_timeseries.png")
 
 # Print summary for 2026
 print("\n" + "="*60)

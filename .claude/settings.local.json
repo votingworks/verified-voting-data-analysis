@@ -34,7 +34,9 @@
       "Bash(if grep -q \"DATA QUALITY ALERTS\" \"data/verifier-condensed/$year_summary_report.md\")",
       "Bash(then grep \"WARNING\" \"data/verifier-condensed/$year_summary_report.md\")",
       "Bash(else echo \"no alerts\")",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(PYTHONPATH=/Users/drew/code/pb-data python3:*)",
+      "Bash(do)"
     ],
     "deny": [],
     "ask": []

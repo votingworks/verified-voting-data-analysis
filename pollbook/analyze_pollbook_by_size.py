@@ -6,6 +6,12 @@ Compare the distribution of jurisdiction sizes (registered voters) between
 paper poll book users vs. electronic poll book users.
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import utilities
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -46,7 +52,7 @@ bins = np.logspace(np.log10(min(paper.min(), electronic.min())),
                    40)
 
 # Plot overlapping histograms
-ax.hist(paper, bins=bins, alpha=0.6, label='Paper', color='#8B4513', edgecolor='black', linewidth=0.5)
+ax.hist(paper, bins=bins, alpha=0.6, label='Paper', color='#808080', edgecolor='black', linewidth=0.5)
 ax.hist(electronic, bins=bins, alpha=0.6, label='Electronic', color='#4169E1', edgecolor='black', linewidth=0.5)
 
 ax.set_xscale('log')
@@ -57,8 +63,8 @@ ax.legend(fontsize=12, loc='upper right')
 ax.grid(True, alpha=0.3, which='both')
 
 plt.tight_layout()
-plt.savefig('analysis_output/charts/pollbook_by_jurisdiction_size_2026.png', dpi=300, bbox_inches='tight')
-print("\n✓ Chart saved to analysis_output/charts/pollbook_by_jurisdiction_size_2026.png")
+plt.savefig('pollbook/pollbook_by_jurisdiction_size_2026.png', dpi=300, bbox_inches='tight')
+print("\n✓ Chart saved to pollbook/pollbook_by_jurisdiction_size_2026.png")
 
 # Print summary statistics
 print("\n" + "="*60)

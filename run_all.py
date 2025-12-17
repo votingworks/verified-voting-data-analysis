@@ -7,7 +7,8 @@ This script executes all data processing and analysis scripts in order:
 1. Condense jurisdictions for all years (2006-2026)
 2. Generate summary reports for all years
 3. Generate turnover analysis
-4. Run all data quality tools and equipment analysis
+4. Generate state-level uniformity data for all years
+5. Run all data quality tools and equipment analysis
 
 Excludes: pollbook scripts (data fetching scripts only run on saved data)
 
@@ -113,9 +114,24 @@ def run_all():
         failed_steps.append(("Turnover analysis", "identify_voting_equipment_turnover.py"))
     print()
 
-    # Phase 4: Run data quality tools
+    # Phase 4: Generate state-level uniformity data
     print()
-    print("Phase 4: Running data quality tools...")
+    print(f"Phase 4: Generating state-level uniformity data for {total_years} years...")
+    print("-" * 80)
+
+    for i, year in enumerate(YEARS, 1):
+        print(f"[{i}/{total_years}] {year}")
+        success = run_command(
+            f"python3 condense_to_state_level.py {year}",
+            "  Condensing to state-level"
+        )
+        if not success:
+            failed_steps.append((f"{year} state-level condensing", "condense_to_state_level.py"))
+        print()
+
+    # Phase 5: Run data quality tools
+    print()
+    print("Phase 5: Running data quality tools...")
     print("-" * 80)
 
     data_quality_scripts = [
@@ -124,9 +140,16 @@ def run_all():
         ("data_quality_tools/jurisdiction_condensed_values/report_anomaly_details.py", "Reporting anomaly details"),
         ("data_quality_tools/jurisdiction_trends/analyze_jurisdiction_trends.py", "Analyzing jurisdiction trends"),
         ("data_quality_tools/turnover/analyze_within_system_patterns.py", "Analyzing within-system turnover patterns"),
+        ("data_quality_tools/pollbook_vendor_analysis/analyze_and_report.py", "Analyzing pollbook vendor patterns"),
+        ("data_quality_tools/dres/analyze_dre_equipment.py", "Analyzing DRE equipment distribution"),
         ("equipment_analysis/analyze_lifecycle_distribution.py", "Analyzing equipment lifecycle distribution"),
         ("equipment_analysis/analyze_vendor_turnover.py", "Analyzing vendor turnover patterns"),
         ("equipment_analysis/analyze_vendor_market_share.py", "Analyzing vendor market share over time"),
+        ("equipment_analysis/analyze_voting_vendor_retention.py", "Analyzing voting system vendor retention"),
+        ("pollbook/analyze_pollbook_adoption_timeseries.py", "Analyzing poll book adoption timeseries"),
+        ("pollbook/analyze_pollbook_by_size.py", "Analyzing poll book adoption by jurisdiction size"),
+        ("pollbook/analyze_pollbook_vendor_share_timeseries.py", "Analyzing poll book vendor market share"),
+        ("pollbook/analyze_vendor_retention.py", "Analyzing poll book vendor retention"),
     ]
 
     for script_path, description in data_quality_scripts:
@@ -156,11 +179,13 @@ def run_all():
         print(f"  - Extracted verifier data for {total_years} years")
         print(f"  - {total_years} condensed CSV files")
         print(f"  - {total_years} summary reports")
+        print(f"  - {total_years} state-level uniformity CSV files")
         print(f"  - Turnover analysis files:")
         print(f"    • data/between_system_turnovers.csv")
         print(f"    • data/within_system_turnovers.csv")
         print(f"  - Data quality reports in data_quality_tools/")
         print(f"  - Equipment analysis charts in equipment_analysis/")
+        print(f"  - Poll book analysis charts in pollbook/")
         return 0
     else:
         print(f"⚠ Pipeline completed with {len(failed_steps)} failures:")

@@ -308,8 +308,8 @@ def create_turnover_volume_chart(df):
 
     # Styling
     ax.set_xlabel('Year', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Number of Between-System Turnovers', fontsize=13, fontweight='bold')
-    ax.set_title('Volume of Between-System Equipment Turnovers Over Time (2008-2026)\n'
+    ax.set_ylabel('Number of System Upgrades', fontsize=13, fontweight='bold')
+    ax.set_title('Volume of System Upgrades Over Time (2008-2026)\n'
                  'Total Jurisdictions Changing Voting Systems Each Year',
                  fontsize=15, fontweight='bold', pad=20)
 
@@ -328,7 +328,7 @@ def create_turnover_volume_chart(df):
     ax.set_xticklabels([str(y) for y in years], rotation=45, ha='right')
 
     plt.tight_layout()
-    output_path = OUTPUT_DIR / 'turnover_volume_by_year.png'
+    output_path = OUTPUT_DIR / 'upgrade_volume_by_year.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -371,7 +371,7 @@ def create_turnover_percentage_jurisdictions_chart(df, total_jurisdictions_by_ye
     # Styling
     ax.set_xlabel('Year', fontsize=13, fontweight='bold')
     ax.set_ylabel('Percentage of Jurisdictions (%)', fontsize=13, fontweight='bold')
-    ax.set_title('Between-System Equipment Turnovers as Percentage of All Jurisdictions (2008-2026)\n'
+    ax.set_title('System Upgrades as Percentage of All Jurisdictions (2008-2026)\n'
                  'Jurisdictions Changing Voting Systems Each Year',
                  fontsize=15, fontweight='bold', pad=20)
 
@@ -393,7 +393,7 @@ def create_turnover_percentage_jurisdictions_chart(df, total_jurisdictions_by_ye
     ax.set_ylim(0, max(percentages) * 1.15)
 
     plt.tight_layout()
-    output_path = OUTPUT_DIR / 'turnover_percentage_jurisdictions.png'
+    output_path = OUTPUT_DIR / 'upgrade_percentage_jurisdictions.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -434,7 +434,7 @@ def create_turnover_percentage_voters_chart(df, total_voters_by_year):
     # Styling
     ax.set_xlabel('Year', fontsize=13, fontweight='bold')
     ax.set_ylabel('Percentage of Registered Voters (%)', fontsize=13, fontweight='bold')
-    ax.set_title('Between-System Equipment Turnovers as Percentage of All Registered Voters (2008-2026)\n'
+    ax.set_title('System Upgrades as Percentage of All Registered Voters (2008-2026)\n'
                  'Registered Voters in Jurisdictions Changing Voting Systems Each Year',
                  fontsize=15, fontweight='bold', pad=20)
 
@@ -456,7 +456,7 @@ def create_turnover_percentage_voters_chart(df, total_voters_by_year):
     ax.set_ylim(0, max(percentages) * 1.15)
 
     plt.tight_layout()
-    output_path = OUTPUT_DIR / 'turnover_percentage_voters.png'
+    output_path = OUTPUT_DIR / 'upgrade_percentage_voters.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -553,10 +553,10 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
     if years_actual:
         ax1.bar(years_actual, actual_pcts, color=color_turnover,
                 edgecolor='black', linewidth=0.5, width=1.5, alpha=0.8,
-                label='Turnover % (Actual)')
+                label='Upgrade % (Actual)')
 
     ax1.set_xlabel('Year', fontsize=13, fontweight='bold')
-    ax1.set_ylabel('Turnover Percentage of Jurisdictions (%)',
+    ax1.set_ylabel('Upgrade Percentage of Jurisdictions (%)',
                    fontsize=13, fontweight='bold', color=color_turnover)
     ax1.tick_params(axis='y', labelcolor=color_turnover)
     ax1.set_ylim(0, max(turnover_pcts_aligned) * 1.15 if turnover_pcts_aligned else 100)
@@ -572,8 +572,8 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
     ax2.tick_params(axis='y', labelcolor=color_hava)
 
     # Title
-    ax1.set_title('Turnover Percentage vs. HAVA Funding Investment (2000-2026)\n'
-                  'Comparing Equipment Deployments/Turnovers with Federal Election Infrastructure Funding',
+    ax1.set_title('System Upgrade Percentage vs. HAVA Funding Investment (2000-2026)\n'
+                  'Comparing System Upgrades with HAVA Funding',
                   fontsize=15, fontweight='bold', pad=20)
 
     # X-axis labels
@@ -591,7 +591,7 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
 
     # Save
     plt.tight_layout()
-    output_path = OUTPUT_DIR / 'turnover_and_hava_funding.png'
+    output_path = OUTPUT_DIR / 'upgrade_and_hava_funding.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -612,6 +612,12 @@ def create_vendor_switching_matrix(df):
     df_filtered = df[
         (df['From_Vendor'] != 'Hand Count') &
         (df['To_Vendor'] != 'Hand Count')
+    ].copy()
+
+    # Filter out 2-year same-vendor transitions (likely coordinated upgrades)
+    df_filtered = df_filtered[
+        ~((df_filtered['Vendor_Retained'] == True) &
+          (df_filtered['Years_Between'] == 2))
     ].copy()
 
     # Categorize vendors
@@ -651,7 +657,7 @@ def create_vendor_switching_matrix(df):
     ax.set_xlabel('Vendor TO', fontsize=14, fontweight='bold')
     ax.set_ylabel('Vendor FROM', fontsize=14, fontweight='bold')
     ax.set_title('Voting System Vendor Switching Matrix (2006-2026)\n'
-                 'Transition Probabilities Between Major Vendors (Weighted by Registered Voters)',
+                 'Vendor Transition Probabilities in System Upgrades (Weighted by Registered Voters)',
                  fontsize=16, fontweight='bold', pad=20)
 
     plt.tight_layout()
@@ -685,7 +691,13 @@ def create_vendor_retention_timeline(df):
     retention_data = defaultdict(list)
 
     for period in periods:
-        period_df = df_periods[df_periods['Period'] == period]
+        period_df = df_periods[df_periods['Period'] == period].copy()
+
+        # Filter out 2-year same-vendor transitions (likely coordinated upgrades)
+        period_df = period_df[
+            ~((period_df['Vendor_Retained'] == True) &
+              (period_df['Years_Between'] == 2))
+        ].copy()
 
         for vendor in MAJOR_VENDORS:
             vendor_transitions = period_df[period_df['From_Vendor'] == vendor]
@@ -724,8 +736,8 @@ def create_vendor_retention_timeline(df):
     # Styling
     ax.set_xlabel('2-Year Period', fontsize=13, fontweight='bold')
     ax.set_ylabel('Retention Rate (%)', fontsize=13, fontweight='bold')
-    ax.set_title('Vendor Retention Rates Over Time (2006-2026)\n'
-                 'Percentage of Registered Voters Retaining Same Vendor in System Changes',
+    ax.set_title('Vendor Retention Rates Upon System Upgrades (2006-2026)\n'
+                 'Percentage of Registered Voters Retaining Same Vendor in System Upgrade',
                  fontsize=15, fontweight='bold', pad=20)
 
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
@@ -831,10 +843,10 @@ def main():
     print("=" * 80)
     print()
     print("Generated files:")
-    print("  - equipment_analysis/turnover_volume_by_year.png")
-    print("  - equipment_analysis/turnover_percentage_jurisdictions.png")
-    print("  - equipment_analysis/turnover_percentage_voters.png")
-    print("  - equipment_analysis/turnover_and_hava_funding.png")
+    print("  - equipment_analysis/upgrade_volume_by_year.png")
+    print("  - equipment_analysis/upgrade_percentage_jurisdictions.png")
+    print("  - equipment_analysis/upgrade_percentage_voters.png")
+    print("  - equipment_analysis/upgrade_and_hava_funding.png")
     print("  - equipment_analysis/vendor_switching_matrix.png")
     print("  - equipment_analysis/vendor_retention_timeline.png")
     print()

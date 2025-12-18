@@ -112,6 +112,13 @@ def run_all():
     )
     if not success:
         failed_steps.append(("Turnover analysis", "etl/generate_turnover_timeseries.py"))
+
+    success = run_command(
+        "python3 etl/generate_machine_uses.py",
+        "Generating machine usage spans"
+    )
+    if not success:
+        failed_steps.append(("Machine usage spans", "etl/generate_machine_uses.py"))
     print()
 
     # Phase 4: Generate state-level uniformity data
@@ -181,6 +188,7 @@ def run_all():
         print(f"  - {total_years} summary reports in outputs/reports/")
         print(f"  - {total_years} state-level uniformity CSV files in data/processed/states/")
         print(f"  - Turnover analysis: data/processed/voting_system_time_series.csv")
+        print(f"  - Machine usage spans: data/processed/machine_uses.csv")
         print(f"  - Analysis reports in outputs/reports/")
         print(f"  - Charts in outputs/figures/")
         return 0

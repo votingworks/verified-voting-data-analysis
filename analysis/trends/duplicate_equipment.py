@@ -17,6 +17,8 @@ from pathlib import Path
 
 # Get the directory where this script is located
 SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'reports'
 
 # Years to analyze
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
@@ -154,7 +156,7 @@ def find_duplicates_by_year(year):
 def generate_report():
     """Generate comprehensive report of duplicate equipment across all years."""
 
-    output_file = SCRIPT_DIR / 'duplicate_equipment_report.txt'
+    output_file = OUTPUT_DIR / 'duplicate_equipment_report.txt'
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write('=' * 100 + '\n')

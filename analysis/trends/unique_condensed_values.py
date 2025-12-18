@@ -10,6 +10,8 @@ from collections import Counter
 
 # Get the directory where this script is located
 SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'reports'
 
 def extract_all_equipment():
     """Extract all unique equipment summaries, families, and vendors across all years."""
@@ -44,7 +46,7 @@ def extract_all_equipment():
             print(f"Warning: {filepath} not found, skipping...")
 
     # Write to file
-    output_file = SCRIPT_DIR / 'unique_condensed_values.txt'
+    output_file = OUTPUT_DIR / 'unique_condensed_values.txt'
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write('UNIQUE CONDENSED VALUES ACROSS 2006-2026\n')

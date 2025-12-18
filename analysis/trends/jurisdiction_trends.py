@@ -14,6 +14,8 @@ import numpy as np
 
 # Get the directory where this script is located
 SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'trends'
 
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
 
@@ -345,7 +347,7 @@ def analyze_field(field_name, field_display_name, output_prefix, group_pattern=N
     pct_jurisdiction = calculate_percentages(field_data, by='jurisdiction')
     create_stacked_bar_chart(
         pct_jurisdiction,
-        f'{output_prefix}_jurisdiction_trends.png',
+        OUTPUT_DIR / f'{output_prefix}_jurisdiction_trends.png',
         f'{field_display_name} Trends (2006-2026)',
         subtitle='By Jurisdiction Count',
         group_pattern=group_pattern,
@@ -357,7 +359,7 @@ def analyze_field(field_name, field_display_name, output_prefix, group_pattern=N
     pct_voters = calculate_percentages(field_data, by='voters')
     create_stacked_bar_chart(
         pct_voters,
-        f'{output_prefix}_voters_trends.png',
+        OUTPUT_DIR / f'{output_prefix}_voters_trends.png',
         f'{field_display_name} Trends (2006-2026)',
         subtitle='Weighted by Registered Voters',
         group_pattern=group_pattern,

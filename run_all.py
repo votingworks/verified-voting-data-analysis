@@ -59,18 +59,18 @@ def run_all():
     print("-" * 80)
 
     success = run_command(
-        "python3 extract_zips.py",
+        "python3 etl/extract_zips.py",
         "Extracting verifier zip files"
     )
     if not success:
-        failed_steps.append(("Zip extraction", "extract_zips.py"))
+        failed_steps.append(("Zip extraction", "etl/extract_zips.py"))
 
     success = run_command(
-        "python3 scrape_eac_hava_funding.py",
+        "python3 etl/scrape_eac_hava_funding.py",
         "Processing HAVA funding HTML"
     )
     if not success:
-        failed_steps.append(("HAVA funding scrape", "scrape_eac_hava_funding.py"))
+        failed_steps.append(("HAVA funding scrape", "etl/scrape_eac_hava_funding.py"))
     print()
 
     # Phase 1: Condense all years
@@ -80,11 +80,11 @@ def run_all():
     for i, year in enumerate(YEARS, 1):
         print(f"[{i}/{total_years}] {year}")
         success = run_command(
-            f"python3 condense_jurisdictions.py {year}",
+            f"python3 etl/condense_jurisdictions.py {year}",
             "  Condensing"
         )
         if not success:
-            failed_steps.append((f"{year} condensing", "condense_jurisdictions.py"))
+            failed_steps.append((f"{year} condensing", "etl/condense_jurisdictions.py"))
         print()
 
     # Phase 2: Generate summary reports for all years
@@ -95,11 +95,11 @@ def run_all():
     for i, year in enumerate(YEARS, 1):
         print(f"[{i}/{total_years}] {year}")
         success = run_command(
-            f"python3 generate_summary_report.py {year}",
+            f"python3 etl/generate_summary_report.py {year}",
             "  Generating report"
         )
         if not success:
-            failed_steps.append((f"{year} summary report", "generate_summary_report.py"))
+            failed_steps.append((f"{year} summary report", "etl/generate_summary_report.py"))
         print()
 
     # Phase 3: Generate turnover analysis
@@ -107,11 +107,11 @@ def run_all():
     print("Phase 3: Generating turnover analysis...")
     print("-" * 80)
     success = run_command(
-        "python3 identify_voting_equipment_turnover.py",
+        "python3 etl/generate_turnover_timeseries.py",
         "Analyzing equipment turnovers"
     )
     if not success:
-        failed_steps.append(("Turnover analysis", "identify_voting_equipment_turnover.py"))
+        failed_steps.append(("Turnover analysis", "etl/generate_turnover_timeseries.py"))
     print()
 
     # Phase 4: Generate state-level uniformity data
@@ -122,11 +122,11 @@ def run_all():
     for i, year in enumerate(YEARS, 1):
         print(f"[{i}/{total_years}] {year}")
         success = run_command(
-            f"python3 condense_to_state_level.py {year}",
+            f"python3 etl/condense_to_state_level.py {year}",
             "  Condensing to state-level"
         )
         if not success:
-            failed_steps.append((f"{year} state-level condensing", "condense_to_state_level.py"))
+            failed_steps.append((f"{year} state-level condensing", "etl/condense_to_state_level.py"))
         print()
 
     # Phase 5: Run data quality tools
@@ -135,21 +135,21 @@ def run_all():
     print("-" * 80)
 
     data_quality_scripts = [
-        ("data_quality_tools/machines/find_duplicate_equipment.py", "Finding duplicate equipment"),
-        ("data_quality_tools/jurisdiction_condensed_values/report_unique_condensed_values.py", "Reporting unique condensed values"),
-        ("data_quality_tools/jurisdiction_condensed_values/report_anomaly_details.py", "Reporting anomaly details"),
-        ("data_quality_tools/jurisdiction_trends/analyze_jurisdiction_trends.py", "Analyzing jurisdiction trends"),
-        ("data_quality_tools/turnover/analyze_within_system_patterns.py", "Analyzing within-system turnover patterns"),
-        ("data_quality_tools/pollbook_vendor_analysis/analyze_and_report.py", "Analyzing pollbook vendor patterns"),
-        ("data_quality_tools/dres/analyze_dre_equipment.py", "Analyzing DRE equipment distribution"),
-        ("equipment_analysis/analyze_lifecycle_distribution.py", "Analyzing equipment lifecycle distribution"),
-        ("equipment_analysis/analyze_vendor_turnover.py", "Analyzing vendor turnover patterns"),
-        ("equipment_analysis/analyze_vendor_market_share.py", "Analyzing vendor market share over time"),
-        ("equipment_analysis/analyze_voting_vendor_retention.py", "Analyzing voting system vendor retention"),
-        ("pollbook/analyze_pollbook_adoption_timeseries.py", "Analyzing poll book adoption timeseries"),
-        ("pollbook/analyze_pollbook_by_size.py", "Analyzing poll book adoption by jurisdiction size"),
-        ("pollbook/analyze_pollbook_vendor_share_timeseries.py", "Analyzing poll book vendor market share"),
-        ("pollbook/analyze_vendor_retention.py", "Analyzing poll book vendor retention"),
+        ("analysis/trends/duplicate_equipment.py", "Finding duplicate equipment"),
+        ("analysis/trends/unique_condensed_values.py", "Reporting unique condensed values"),
+        ("analysis/trends/anomaly_details.py", "Reporting anomaly details"),
+        ("analysis/trends/jurisdiction_trends.py", "Analyzing jurisdiction trends"),
+        ("analysis/equipment/within_system_patterns.py", "Analyzing within-system turnover patterns"),
+        ("analysis/pollbook/vendor_analysis.py", "Analyzing pollbook vendor patterns"),
+        ("analysis/trends/dre_analysis.py", "Analyzing DRE equipment distribution"),
+        ("analysis/equipment/lifecycle_distribution.py", "Analyzing equipment lifecycle distribution"),
+        ("analysis/equipment/vendor_turnover.py", "Analyzing vendor turnover patterns"),
+        ("analysis/equipment/vendor_market_share.py", "Analyzing vendor market share over time"),
+        ("analysis/equipment/vendor_retention.py", "Analyzing voting system vendor retention"),
+        ("analysis/pollbook/adoption_timeseries.py", "Analyzing poll book adoption timeseries"),
+        ("analysis/pollbook/by_jurisdiction_size.py", "Analyzing poll book adoption by jurisdiction size"),
+        ("analysis/pollbook/vendor_share.py", "Analyzing poll book vendor market share"),
+        ("analysis/pollbook/vendor_retention.py", "Analyzing poll book vendor retention"),
     ]
 
     for script_path, description in data_quality_scripts:
@@ -177,14 +177,12 @@ def run_all():
         print()
         print("Generated outputs:")
         print(f"  - Extracted verifier data for {total_years} years")
-        print(f"  - {total_years} condensed CSV files")
-        print(f"  - {total_years} summary reports")
-        print(f"  - {total_years} state-level uniformity CSV files")
-        print(f"  - Turnover analysis:")
-        print(f"    • data/voting_system_time_series.csv")
-        print(f"  - Data quality reports in data_quality_tools/")
-        print(f"  - Equipment analysis charts in equipment_analysis/")
-        print(f"  - Poll book analysis charts in pollbook/")
+        print(f"  - {total_years} condensed CSV files in data/processed/jurisdictions/")
+        print(f"  - {total_years} summary reports in outputs/reports/")
+        print(f"  - {total_years} state-level uniformity CSV files in data/processed/states/")
+        print(f"  - Turnover analysis: data/processed/voting_system_time_series.csv")
+        print(f"  - Analysis reports in outputs/reports/")
+        print(f"  - Charts in outputs/figures/")
         return 0
     else:
         print(f"⚠ Pipeline completed with {len(failed_steps)} failures:")

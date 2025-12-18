@@ -10,7 +10,7 @@ import pandas as pd
 from pathlib import Path
 
 
-def load_all_years(data_dir='data/verifier-condensed'):
+def load_all_years(data_dir='data/processed/jurisdictions'):
     """
     Load all 11 years (2006-2026, even years) into a dict of DataFrames.
 
@@ -33,7 +33,7 @@ def load_all_years(data_dir='data/verifier-condensed'):
     return dfs
 
 
-def load_year(year, data_dir='data/verifier-condensed'):
+def load_year(year, data_dir='data/processed/jurisdictions'):
     """
     Load a single year's data.
 

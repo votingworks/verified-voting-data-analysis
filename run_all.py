@@ -145,6 +145,7 @@ def run_all():
         ("analysis/trends/duplicate_equipment.py", "Finding duplicate equipment"),
         ("analysis/trends/unique_condensed_values.py", "Reporting unique condensed values"),
         ("analysis/trends/anomaly_details.py", "Reporting anomaly details"),
+        ("analysis/trends/machine_uses_analysis.py", "Analyzing machine usage data"),
         ("analysis/trends/jurisdiction_trends.py", "Analyzing jurisdiction trends"),
         ("analysis/equipment/within_system_patterns.py", "Analyzing within-system turnover patterns"),
         ("analysis/pollbook/vendor_analysis.py", "Analyzing pollbook vendor patterns"),

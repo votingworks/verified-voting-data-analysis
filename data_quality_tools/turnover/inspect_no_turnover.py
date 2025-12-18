@@ -2,21 +2,27 @@
 """
 Inspect jurisdictions with no equipment turnover (2006-2026).
 
-Reads from: ../../data/no_system_turnovers.csv
+Reads from: ../../data/voting_system_time_series.csv
 Outputs: no_turnover_jurisdictions.txt
+
+Finds jurisdictions that only have baseline records (no transition records).
 """
 
 import csv
 from pathlib import Path
-from collections import Counter
+from collections import Counter, defaultdict
 
 SCRIPT_DIR = Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent.parent / 'data'
 
 
 def load_no_turnover_from_csv():
-    """Load no-turnover jurisdictions from CSV."""
-    csv_path = DATA_DIR / 'no_system_turnovers.csv'
+    """Load no-turnover jurisdictions from time series CSV.
+
+    Finds jurisdictions that ONLY have baseline rows (no transition rows).
+    Excludes Hand Count jurisdictions.
+    """
+    csv_path = DATA_DIR / 'voting_system_time_series.csv'
 
     if not csv_path.exists():
         raise FileNotFoundError(
@@ -24,12 +30,45 @@ def load_no_turnover_from_csv():
             "Run identify_voting_equipment_turnover.py first to generate it."
         )
 
-    no_turnover = {}
+    # First pass: identify which FIPS have transitions
+    fips_with_transitions = set()
+    baseline_rows = {}
+
     with open(csv_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
             fips = row['FIPS']
-            no_turnover[fips] = row
+            record_type = row['Record_Type']
+
+            if record_type in ('between_system', 'within_system'):
+                fips_with_transitions.add(fips)
+            elif record_type == 'baseline':
+                baseline_rows[fips] = row
+
+    # Second pass: collect baseline-only jurisdictions (excluding Hand Count)
+    no_turnover = {}
+    for fips, row in baseline_rows.items():
+        if fips not in fips_with_transitions:
+            # Use To_* columns for baseline rows (From_* are empty)
+            equipment = row['To_Equipment']
+            if equipment != 'Hand Count':
+                # Create a compatible row format for the report
+                # Calculate lifecycle as 2026 - baseline year
+                baseline_year = int(row['To_Year']) if row['To_Year'] else 2006
+                years_between = 2026 - baseline_year
+
+                no_turnover[fips] = {
+                    'FIPS': fips,
+                    'State': row['State'],
+                    'Jurisdiction': row['Jurisdiction'],
+                    'From_Year': baseline_year,  # For reporting compatibility
+                    'From_Equipment': equipment,
+                    'From_Vendor': row['To_Vendor'],
+                    'From_System': row['To_System'],
+                    'From_DRE': row['To_DRE'],
+                    'From_Marking_Method': row['To_Marking_Method'],
+                    'Years_Between': years_between
+                }
 
     return no_turnover
 

@@ -6,7 +6,7 @@ Generates:
 1. Vendor switching matrix heatmap (Dominion, ES&S, Hart, Other)
 2. Vendor retention timeline by 2-year period
 
-Reads from: ../data/between_system_turnovers.csv
+Reads from: ../data/voting_system_time_series.csv (filtered to Record_Type='between_system')
 """
 
 import pandas as pd
@@ -53,9 +53,10 @@ def load_turnovers_with_voters():
     Returns:
         DataFrame with additional 'Registered_Voters' column
     """
-    # Load turnover data
-    filepath = DATA_DIR / 'between_system_turnovers.csv'
+    # Load time series data and filter to between_system records
+    filepath = DATA_DIR / 'voting_system_time_series.csv'
     df_turnovers = pd.read_csv(filepath)
+    df_turnovers = df_turnovers[df_turnovers['Record_Type'] == 'between_system'].copy()
 
     # Initialize voters column
     df_turnovers['Registered_Voters'] = 0

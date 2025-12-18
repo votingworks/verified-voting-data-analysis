@@ -11,7 +11,7 @@ Categorizes within-system changes into common patterns:
 6. Within ES&S Model 100 Generation (equipment changes within this system family)
 7. Other within-system changes
 
-Reads from: ../../data/within_system_turnovers.csv
+Reads from: ../../data/voting_system_time_series.csv (filtered to Record_Type='within_system')
 """
 
 import csv
@@ -32,7 +32,7 @@ DATA_DIR = SCRIPT_DIR.parent.parent / 'data'
 def analyze_within_system_patterns():
     """Categorize and analyze within-system turnover patterns."""
 
-    input_file = DATA_DIR / 'within_system_turnovers.csv'
+    input_file = DATA_DIR / 'voting_system_time_series.csv'
 
     # Pattern categories
     central_precinct_changes = []
@@ -51,6 +51,9 @@ def analyze_within_system_patterns():
         reader = csv.DictReader(f)
 
         for row in reader:
+            # Filter to within_system records only
+            if row.get('Record_Type') != 'within_system':
+                continue
             from_equipment = row['From_Equipment']
             to_equipment = row['To_Equipment']
             system = row['From_System']

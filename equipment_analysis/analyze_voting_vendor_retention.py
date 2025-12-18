@@ -48,9 +48,12 @@ def load_baseline_data():
 
 
 def load_vendor_changes():
-    """Load vendor change events."""
-    filepath = 'data/between_system_turnovers.csv'
+    """Load vendor change events from time series CSV."""
+    filepath = 'data/voting_system_time_series.csv'
     df = pd.read_csv(filepath)
+
+    # Filter to between_system records only
+    df = df[df['Record_Type'] == 'between_system']
 
     # Filter to only vendor changes
     vendor_changes = df[df['Vendor_Retained'] == False].copy()

@@ -2,19 +2,17 @@
 """
 Analyze equipment renewals and changes over time (2006-2026).
 
-Tracks two types of equipment changes:
-1. Between-system: When voting system family changes (e.g., ES&S DS200 → Dominion ImageCast)
-2. Within-system: When equipment changes but system stays same (e.g., ES&S DS200 → ES&S ExpressVote)
+Generates a unified time series CSV with three record types:
+1. Baseline: Starting equipment for every jurisdiction (From_* empty, To_* = starting state)
+2. Between-system: When voting system family changes (e.g., ES&S DS200 → Dominion ImageCast)
+3. Within-system: When equipment changes but system stays same (e.g., ES&S DS200 → ES&S ExpressVote)
 
-For each change, records:
-- Year of change
-- Equipment, system, vendor, marking method before and after
-- DRE status and marking method status transitions
-- Vendor retention and years between changes
+Schema design: Each row represents "the state AFTER this point in time" stored in To_* columns.
+- Baseline rows: From_* empty, To_* = starting equipment
+- Transition rows: From_* = state before, To_* = state after
 
-Outputs:
-- between_system_turnovers.csv - System family changed
-- within_system_turnovers.csv - Equipment changed, same system family
+Output:
+- voting_system_time_series.csv - All jurisdictions with baseline + transitions, sorted by State/Jurisdiction/To_Year
 """
 
 import csv
@@ -221,20 +219,63 @@ def calculate_marking_method_status(from_marking_method, to_marking_method):
         return "Changed"  # Fallback for unexpected values
 
 
-def generate_two_csv_files(timelines, between_output_file, within_output_file):
+def generate_baseline_rows(timelines):
     """
-    Convert timelines to two CSV files: between-system and within-system changes.
+    Generate baseline row for EVERY jurisdiction from their timeline[0].
+
+    Baseline rows have From_* empty, To_* populated with starting equipment.
+    This represents "after this point, the jurisdiction uses To_* equipment."
+
+    Returns:
+        list: List of baseline row dictionaries
+    """
+    rows = []
+
+    for fips, data in timelines.items():
+        baseline = data['timeline'][0]
+
+        rows.append({
+            'FIPS': fips,
+            'State': data['state'],
+            'Jurisdiction': data['jurisdiction'],
+            'From_Year': '',  # No prior state
+            'From_Equipment': '',
+            'From_Vendor': '',
+            'From_System': '',
+            'From_DRE': '',
+            'From_Marking_Method': '',
+            'To_Year': baseline['year'],  # Starting year (First Year In Use or 2006)
+            'To_Equipment': baseline['equipment'],
+            'To_Vendor': baseline['vendor'],
+            'To_System': baseline['family'],
+            'To_DRE': baseline.get('is_dre', ''),
+            'To_Marking_Method': baseline.get('marking_method', ''),
+            'DRE_Status': '',
+            'Marking_Method_Status': '',
+            'Vendor_Retained': '',
+            'Years_Between': '',
+            'From_Baseline': True,
+            'Record_Type': 'baseline'
+        })
+
+    return rows
+
+
+def generate_transition_rows(timelines):
+    """
+    Generate transition rows (between_system/within_system) from timeline changes.
 
     For each jurisdiction with multiple timeline entries:
         For each change (entry[i] → entry[i+1]):
-            Categorize as between-system or within-system
-            Write row with before/after data to appropriate file
+            Create row with From_* = state before, To_* = state after
+            Add Record_Type based on change type
 
     Returns:
-        tuple: (num_between_changes, num_within_changes)
+        tuple: (list of transition rows, num_between, num_within)
     """
-    between_changes = []
-    within_changes = []
+    rows = []
+    num_between = 0
+    num_within = 0
 
     for fips, data in timelines.items():
         timeline = data['timeline']
@@ -247,6 +288,15 @@ def generate_two_csv_files(timelines, between_output_file, within_output_file):
         for i in range(len(timeline) - 1):
             from_entry = timeline[i]
             to_entry = timeline[i + 1]
+
+            # Determine record type from change_type
+            change_type = to_entry.get('change_type', 'Between System')
+            if change_type == 'Between System':
+                record_type = 'between_system'
+                num_between += 1
+            else:
+                record_type = 'within_system'
+                num_within += 1
 
             change_dict = {
                 'FIPS': fips,
@@ -274,112 +324,54 @@ def generate_two_csv_files(timelines, between_output_file, within_output_file):
                 ),
                 'Vendor_Retained': from_entry['vendor'] == to_entry['vendor'],
                 'Years_Between': to_entry['year'] - from_entry['year'],
-                'From_Baseline': from_entry['is_baseline']
+                'From_Baseline': from_entry['is_baseline'],
+                'Record_Type': record_type
             }
 
-            # Separate by change type
-            change_type = to_entry.get('change_type', 'Between System')
-            if change_type == 'Between System':
-                between_changes.append(change_dict)
-            elif change_type == 'Within System':
-                within_changes.append(change_dict)
+            rows.append(change_dict)
 
-    # Write both CSV files
+    return rows, num_between, num_within
+
+
+def write_unified_csv(baseline_rows, transition_rows, output_file):
+    """
+    Write combined time series CSV sorted by State, Jurisdiction, To_Year.
+
+    Args:
+        baseline_rows: List of baseline row dictionaries
+        transition_rows: List of transition row dictionaries
+        output_file: Path to output CSV file
+    """
+    all_rows = baseline_rows + transition_rows
+
+    # Sort by State, Jurisdiction, To_Year (with empty To_Year sorting first)
+    def sort_key(row):
+        to_year = row['To_Year']
+        # Handle empty To_Year (shouldn't happen but be safe)
+        if to_year == '' or to_year is None:
+            to_year = 0
+        return (row['State'], row['Jurisdiction'], to_year)
+
+    all_rows.sort(key=sort_key)
+
+    # Fieldnames include Record_Type
     fieldnames = [
         'FIPS', 'State', 'Jurisdiction',
         'From_Year', 'From_Equipment', 'From_Vendor', 'From_System', 'From_DRE', 'From_Marking_Method',
         'To_Year', 'To_Equipment', 'To_Vendor', 'To_System', 'To_DRE', 'To_Marking_Method',
-        'DRE_Status', 'Marking_Method_Status', 'Vendor_Retained', 'Years_Between', 'From_Baseline'
-    ]
-
-    # Write between-system changes
-    with open(between_output_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(between_changes)
-
-    # Write within-system changes
-    with open(within_output_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(within_changes)
-
-    return len(between_changes), len(within_changes)
-
-
-def generate_no_turnover_csv(timelines, output_file):
-    """
-    Generate CSV of jurisdictions with no equipment system changes (2006-2026).
-
-    Filters: Excludes Hand Count jurisdictions only.
-
-    CSV Schema: Matches between_system_turnovers.csv for easy merging
-    """
-    no_turnover_rows = []
-
-    for fips, data in timelines.items():
-        timeline = data['timeline']
-
-        # Only process jurisdictions with no changes
-        if len(timeline) != 1:
-            continue
-
-        baseline = timeline[0]
-
-        # FILTER: Exclude Hand Count only
-        if baseline['equipment'] == 'Hand Count':
-            continue
-
-        # Calculate lifecycle from baseline to 2026
-        from_year = baseline['year']
-        to_year = 2026
-        years_between = to_year - from_year
-
-        # Skip invalid lifecycles
-        if years_between < 0:
-            continue
-
-        row = {
-            'FIPS': fips,
-            'State': data['state'],
-            'Jurisdiction': data['jurisdiction'],
-            'From_Year': from_year,
-            'From_Equipment': baseline['equipment'],
-            'From_Vendor': baseline['vendor'],
-            'From_System': baseline['family'],
-            'From_DRE': baseline.get('is_dre', ''),
-            'From_Marking_Method': baseline.get('marking_method', ''),
-            'To_Year': to_year,
-            'To_Equipment': baseline['equipment'],  # Same (no change)
-            'To_Vendor': baseline['vendor'],
-            'To_System': baseline['family'],
-            'To_DRE': baseline.get('is_dre', ''),
-            'To_Marking_Method': baseline.get('marking_method', ''),
-            'DRE_Status': 'No Change',
-            'Marking_Method_Status': 'No Change',
-            'Vendor_Retained': True,
-            'Years_Between': years_between,
-            'From_Baseline': True
-        }
-        no_turnover_rows.append(row)
-
-    # Same fieldnames as between_system_turnovers.csv
-    fieldnames = [
-        'FIPS', 'State', 'Jurisdiction',
-        'From_Year', 'From_Equipment', 'From_Vendor', 'From_System', 'From_DRE', 'From_Marking_Method',
-        'To_Year', 'To_Equipment', 'To_Vendor', 'To_System', 'To_DRE', 'To_Marking_Method',
-        'DRE_Status', 'Marking_Method_Status', 'Vendor_Retained', 'Years_Between', 'From_Baseline'
+        'DRE_Status', 'Marking_Method_Status', 'Vendor_Retained', 'Years_Between', 'From_Baseline',
+        'Record_Type'
     ]
 
     with open(output_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(no_turnover_rows)
+        writer.writerows(all_rows)
 
-    return len(no_turnover_rows)
+    return len(all_rows)
 
 
-def print_summary_statistics(timelines, num_between, num_within, num_no_turnover):
+def print_summary_statistics(timelines, num_baseline, num_between, num_within):
     """Print summary statistics to console."""
 
     print()
@@ -397,8 +389,8 @@ def print_summary_statistics(timelines, num_between, num_within, num_no_turnover
     print(f"Jurisdictions with changes: {jurisdictions_with_changes:,} ({jurisdictions_with_changes/total_jurisdictions*100:.1f}%)")
     jurisdictions_no_change = sum(1 for t in timelines.values() if len(t['timeline']) == 1)
     print(f"Jurisdictions with no changes: {jurisdictions_no_change:,} ({jurisdictions_no_change/total_jurisdictions*100:.1f}%)")
-    print(f"  - Excluding Hand Count: {num_no_turnover:,}")
     print()
+    print(f"Baseline rows: {num_baseline:,}")
     print(f"Between-system turnovers: {num_between:,} ({num_between/total_changes*100:.1f}%)")
     print(f"Within-system turnovers: {num_within:,} ({num_within/total_changes*100:.1f}%)")
     print(f"Total turnover events: {total_changes:,}")
@@ -469,22 +461,22 @@ def main():
     print("✓ Change detection complete")
 
     print()
-    print("Generating CSV files...")
-    between_output = './data/between_system_turnovers.csv'
-    within_output = './data/within_system_turnovers.csv'
-    num_between, num_within = generate_two_csv_files(timelines, between_output, within_output)
-    print(f"✓ Written {num_between:,} between-system changes to {between_output}")
-    print(f"✓ Written {num_within:,} within-system changes to {within_output}")
-    print(f"  Total turnover events: {num_between + num_within:,}")
+    print("Generating time series CSV...")
 
-    print()
-    print("Generating no-turnover CSV...")
-    no_turnover_output = './data/no_system_turnovers.csv'
-    num_no_turnover = generate_no_turnover_csv(timelines, no_turnover_output)
-    print(f"✓ Written {num_no_turnover:,} no-turnover jurisdictions to {no_turnover_output}")
-    print(f"  (Excluded Hand Count jurisdictions)")
+    # Generate baseline rows for ALL jurisdictions
+    baseline_rows = generate_baseline_rows(timelines)
+    print(f"✓ Generated {len(baseline_rows):,} baseline rows")
 
-    print_summary_statistics(timelines, num_between, num_within, num_no_turnover)
+    # Generate transition rows (between_system and within_system)
+    transition_rows, num_between, num_within = generate_transition_rows(timelines)
+    print(f"✓ Generated {len(transition_rows):,} transition rows ({num_between:,} between-system, {num_within:,} within-system)")
+
+    # Write unified CSV sorted by State, Jurisdiction, To_Year
+    output_file = './data/voting_system_time_series.csv'
+    total_rows = write_unified_csv(baseline_rows, transition_rows, output_file)
+    print(f"✓ Written {total_rows:,} total rows to {output_file}")
+
+    print_summary_statistics(timelines, len(baseline_rows), num_between, num_within)
 
     return 0
 

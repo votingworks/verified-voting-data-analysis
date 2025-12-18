@@ -44,31 +44,52 @@ DRES_WITHOUT_VVPAT_OPTION = [
 
 
 def load_family_changes_data():
-    """Load equipment family changes data, including no-turnover jurisdictions."""
+    """Load equipment family changes data, including no-turnover jurisdictions.
 
-    # Load between-system turnovers
-    between_filepath = DATA_DIR / 'between_system_turnovers.csv'
-    if not between_filepath.exists():
-        raise FileNotFoundError(f"Between-system file not found: {between_filepath}")
+    Reads from voting_system_time_series.csv and combines:
+    1. between_system transition rows (have Years_Between already)
+    2. baseline-only rows (need to calculate lifecycle as 2026 - To_Year)
+    """
+    filepath = DATA_DIR / 'voting_system_time_series.csv'
+    if not filepath.exists():
+        raise FileNotFoundError(f"Time series file not found: {filepath}")
 
-    df_between = pd.read_csv(between_filepath)
-    print(f"✓ Loaded {len(df_between):,} between-system changes")
+    df = pd.read_csv(filepath)
 
-    # Load no-turnover jurisdictions
-    no_turnover_filepath = DATA_DIR / 'no_system_turnovers.csv'
-    if not no_turnover_filepath.exists():
-        print(f"⚠ Warning: No-turnover file not found: {no_turnover_filepath}")
-        print(f"  Proceeding with only between-system changes")
-        return df_between
+    # Get between_system transition rows (these already have Years_Between)
+    df_transitions = df[df['Record_Type'] == 'between_system'].copy()
+    print(f"✓ Loaded {len(df_transitions):,} between-system changes")
 
-    df_no_turnover = pd.read_csv(no_turnover_filepath)
-    print(f"✓ Loaded {len(df_no_turnover):,} no-turnover jurisdictions")
+    # Find baseline-only jurisdictions (no transitions)
+    # First, get FIPS that have any transitions
+    transition_fips = df[df['Record_Type'].isin(['between_system', 'within_system'])]['FIPS'].unique()
+
+    # Get baseline rows for FIPS that have NO transitions
+    df_baseline_only = df[
+        (df['Record_Type'] == 'baseline') &
+        (~df['FIPS'].isin(transition_fips)) &
+        (df['To_Equipment'] != 'Hand Count')  # Exclude Hand Count
+    ].copy()
+
+    print(f"✓ Loaded {len(df_baseline_only):,} no-turnover jurisdictions")
+
+    # For baseline-only rows, calculate Years_Between and set From_* fields for compatibility
+    # Baseline rows have From_* empty and To_* populated with starting equipment
+    df_baseline_only['Years_Between'] = 2026 - df_baseline_only['To_Year'].astype(int)
+
+    # Copy To_* to From_* for compatibility with downstream analysis
+    # (filters like From_Marking_Method, From_Equipment, etc.)
+    for col in ['Year', 'Equipment', 'Vendor', 'System', 'DRE', 'Marking_Method']:
+        df_baseline_only[f'From_{col}'] = df_baseline_only[f'To_{col}']
+
+    # Set To_Year to 2026 (end of observation window)
+    df_baseline_only['To_Year'] = 2026
 
     # Merge datasets
-    df_combined = pd.concat([df_between, df_no_turnover], ignore_index=True)
+    df_combined = pd.concat([df_transitions, df_baseline_only], ignore_index=True)
     print(f"✓ Combined: {len(df_combined):,} total lifecycle observations")
-    print(f"  - Between-system changes: {len(df_between):,}")
-    print(f"  - No-turnover (excl Hand Count): {len(df_no_turnover):,}")
+    print(f"  - Between-system changes: {len(df_transitions):,}")
+    print(f"  - No-turnover (excl Hand Count): {len(df_baseline_only):,}")
 
     return df_combined
 

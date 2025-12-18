@@ -16,6 +16,16 @@ from collections import defaultdict
 
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
 
+# Manufacturer name normalization
+MANUFACTURER_NORMALIZATION = {
+    'Premier (Diebold)': 'Diebold',
+}
+
+
+def normalize_manufacturer(name):
+    """Normalize manufacturer name to canonical form."""
+    return MANUFACTURER_NORMALIZATION.get(name, name)
+
 
 def load_machines_for_year(year):
     """
@@ -44,7 +54,7 @@ def load_machines_for_year(year):
                 'state': row['State'],
                 'jurisdiction': row['Jurisdiction'],
                 'equipment_type': row['Equipment Type'],
-                'manufacturer': row['Manufacturer'],
+                'manufacturer': normalize_manufacturer(row['Manufacturer']),
                 'model': row['Model'],
                 'first_year_in_use': row.get('First Year in Use', '').strip()
             })

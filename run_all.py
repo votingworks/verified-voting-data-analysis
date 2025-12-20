@@ -117,12 +117,13 @@ def run_all():
         ("analysis/trends/marking_method_sankey.py 2010 2026", "Generating marking method sankey diagram"),
 
         # Equipment analysis
+        ("analysis/equipment/adoption_time_series.py", "Analyzing voting equipment adoption timeseries"),
         ("analysis/equipment/vendor_turnover.py", "Analyzing vendor turnover patterns"),
         ("analysis/equipment/vendor_market_share.py", "Analyzing vendor market share over time"),
         ("analysis/equipment/vendor_retention.py", "Analyzing voting system vendor retention"),
 
         # Poll book analysis
-        ("analysis/pollbook/adoption_timeseries.py", "Analyzing poll book adoption timeseries"),
+        ("analysis/pollbook/adoption_time_series.py", "Analyzing poll book adoption timeseries"),
         ("analysis/pollbook/by_jurisdiction_size.py", "Analyzing poll book adoption by jurisdiction size"),
         ("analysis/pollbook/vendor_market_share.py", "Analyzing poll book vendor market share"),
         ("analysis/pollbook/vendor_retention.py", "Analyzing poll book vendor retention"),

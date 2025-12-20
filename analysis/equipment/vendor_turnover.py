@@ -582,6 +582,97 @@ def create_vendor_switching_matrix(df):
     return transition_probs
 
 
+def create_vendor_retention_timeline(df, output_path):
+    """
+    Create line chart showing vendor retention rates over time.
+
+    For each 2-year cycle, calculates what percentage of system changes
+    (weighted by registered voters) stayed with the same vendor.
+
+    Args:
+        df: DataFrame with transitions (should include both vendor and system types)
+        output_path: Path to save chart
+    """
+    df_filtered = df.copy()
+
+    # Include both vendor AND system transitions
+    df_filtered = df_filtered[df_filtered['Transition_Type'].isin(['vendor', 'system'])]
+
+    # Categorize vendors
+    df_filtered['From_Cat'] = df_filtered['From_Primary_Voting_Vendor'].apply(categorize_vendor)
+    df_filtered['To_Cat'] = df_filtered['To_Primary_Voting_Vendor'].apply(categorize_vendor)
+
+    # Get unique years (should already be 2-year cycles)
+    years = sorted(df_filtered['To_Year'].unique())
+
+    # Colors matching vendor_market_share.py
+    vendor_colors = {
+        'Dominion': '#4169E1',    # Royal blue
+        'ES&S': '#228B22',        # Forest green
+        'Hart': '#9370DB',        # Medium purple
+    }
+
+    # Calculate retention rate for each vendor and year
+    vendors = ['Dominion', 'ES&S', 'Hart']
+    retention_data = {vendor: [] for vendor in vendors}
+
+    for year in years:
+        year_df = df_filtered[df_filtered['To_Year'] == year]
+
+        for vendor in vendors:
+            # Get all transitions FROM this vendor in this year
+            from_vendor = year_df[year_df['From_Cat'] == vendor]
+
+            if len(from_vendor) == 0:
+                retention_data[vendor].append(None)
+                continue
+
+            # Calculate voter-weighted retention rate
+            total_voters = from_vendor['Registered_Voters'].sum()
+            retained_voters = from_vendor[from_vendor['To_Cat'] == vendor]['Registered_Voters'].sum()
+
+            if total_voters > 0:
+                retention_rate = (retained_voters / total_voters) * 100
+                retention_data[vendor].append(retention_rate)
+            else:
+                retention_data[vendor].append(None)
+
+    # Create the chart
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    for vendor in vendors:
+        rates = retention_data[vendor]
+        # Filter out None values for plotting
+        valid_years = [y for y, r in zip(years, rates) if r is not None]
+        valid_rates = [r for r in rates if r is not None]
+
+        if valid_years:
+            ax.plot(valid_years, valid_rates,
+                    marker='o', markersize=8, linewidth=2.5,
+                    color=vendor_colors[vendor], label=vendor)
+
+    ax.set_xlabel('Year', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Retention Rate (%)', fontsize=14, fontweight='bold')
+    ax.set_title('Vendor Retention Rate Over Time (2006-2026)\n'
+                 '% of System Changes Where Jurisdiction Stayed with Same Vendor',
+                 fontsize=16, fontweight='bold', pad=20)
+
+    ax.set_ylim(0, 105)
+    ax.set_xlim(min(years) - 0.5, max(years) + 0.5)
+    ax.set_xticks(years)
+
+    ax.legend(loc='lower right', fontsize=12, framealpha=0.9)
+    ax.grid(axis='both', alpha=0.3, linestyle='--')
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"✓ Chart saved to {output_path}")
+
+    return retention_data
+
+
 def main():
     """Main processing pipeline."""
     print("=" * 80)
@@ -672,6 +763,13 @@ def main():
     transition_matrix = create_vendor_switching_matrix(df)
     print()
 
+    # Generate retention timeline
+    print("Generating vendor retention timeline...")
+    retention_data = create_vendor_retention_timeline(
+        df, OUTPUT_DIR / 'vendor_retention_timeline.png'
+    )
+    print()
+
     # Summary
     print("=" * 80)
     print("ANALYSIS COMPLETE")
@@ -683,6 +781,7 @@ def main():
     print(f"  - {OUTPUT_DIR / 'upgrade_percentage_voters.png'}")
     print(f"  - {OUTPUT_DIR / 'upgrade_and_hava_funding.png'}")
     print(f"  - {OUTPUT_DIR / 'vendor_switching_matrix.png'}")
+    print(f"  - {OUTPUT_DIR / 'vendor_retention_timeline.png'}")
     print()
 
 

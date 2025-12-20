@@ -1,410 +1,345 @@
 #!/usr/bin/env python3
 """
-Analyze poll book vendor retention using survival analysis.
+Analyze poll book vendor retention using Kaplan-Meier survival analysis.
 
-Compares retention rates for KNOWiNK, ES&S, and Tenex at 2, 4, 6, 8, 10, 12,
-and 14+ year intervals after adoption.
+Uses pollbook_transitions.csv to calculate how long jurisdictions stay
+with each vendor before switching to another vendor.
 
-Tracks all adoptions separately (jurisdictions that switch back count twice).
+For each vendor:
+- An "adoption" is a baseline or transition TO that vendor
+- A "departure" is a subsequent transition AWAY from that vendor
+- Right-censored: jurisdictions still with that vendor in 2026
+
+Outputs:
+- Kaplan-Meier survival curves comparing major poll book vendors
+- Median survival time (years until 50% have switched)
+- Survival probabilities at key time points
 """
 
 import sys
 from pathlib import Path
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
-from collections import defaultdict
+import matplotlib.pyplot as plt
+from lifelines import KaplanMeierFitter
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
+OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'pollbook'
 
-# Vendors to analyze
+# Vendors to analyze (actual names in data)
 VENDORS = ['KNOWiNK', 'ES&S', 'Tenex', 'In-House']
 
 # Color palette
 COLORS = {
-    'KNOWiNK': '#e74c3c',
-    'ES&S': '#3498db',
-    'Tenex': '#27ae60',
-    'In-House': '#F4D03F'
+    'KNOWiNK': '#e74c3c',    # Coral
+    'ES&S': '#3498db',       # Blue
+    'Tenex': '#27ae60',      # Green
+    'In-House': '#F4D03F',   # Golden Yellow
 }
 
-# Time intervals to analyze (years since adoption)
-INTERVALS = [2, 4, 6, 8, 10, 12, "14+"]
-
-# Current year (for censoring)
+# Current year for censoring
 CURRENT_YEAR = 2026
 
 
-def load_turnover_data():
-    """Load poll book turnover data."""
-    filepath = 'data/processed/pollbook_turnover.csv'
+def load_transitions():
+    """Load poll book transitions data."""
+    filepath = DATA_DIR / 'pollbook_transitions.csv'
+
+    if not filepath.exists():
+        raise FileNotFoundError(f"Transitions file not found: {filepath}")
+
     df = pd.read_csv(filepath)
+    print(f"Loaded {len(df):,} transition records")
+
     return df
 
 
-def load_baseline_data():
-    """Load 2006 baseline poll book data."""
-    filepath = 'data/processed/jurisdictions/2006_verifier-jurisdictions-condensed.csv'
-
-    # Read CSV, skipping title row
-    df = pd.read_csv(filepath, skiprows=1)
-
-    # Extract relevant columns
-    baseline = df[['FIPS code', 'State', 'Jurisdiction', 'Poll Book Status']].copy()
-    baseline.rename(columns={'FIPS code': 'FIPS'}, inplace=True)
-
-    return baseline
-
-
-def reconstruct_timelines(baseline_df, turnover_df):
+def calculate_vendor_survival_data(transitions_df, vendor):
     """
-    Reconstruct jurisdiction timelines from 2006 baseline + turnover events.
+    Calculate survival data for a specific vendor.
 
-    Returns:
-        dict: {FIPS: [(year, status), (year, status), ...]}
-    """
-    timelines = defaultdict(list)
-
-    # Step 1: Initialize with 2006 baseline poll book status
-    for _, row in baseline_df.iterrows():
-        fips = row['FIPS']
-        status = row['Poll Book Status']
-
-        # Skip if missing poll book status
-        if pd.isna(status) or status == '':
-            continue
-
-        # Initialize timeline with 2006 baseline (assume all started in 2006)
-        timelines[fips].append((2006, status))
-
-    # Step 2: Add turnover events (chronologically)
-    for _, row in turnover_df.iterrows():
-        fips = row['FIPS']
-        to_year = row['To_Year']
-        to_status = row['To_Status']
-
-        # Skip if missing data
-        if pd.isna(to_status) or to_status == '':
-            continue
-
-        # Add to timeline
-        timelines[fips].append((to_year, to_status))
-
-    # Step 3: Sort each timeline by year
-    for fips in timelines:
-        timelines[fips].sort()
-
-    return timelines
-
-
-def identify_adoptions(timelines, vendor):
-    """
-    Identify all adoptions of a vendor.
-
-    Each transition TO the vendor counts as an adoption.
-    Multiple adoptions by same jurisdiction count separately.
-
-    Returns:
-        list: [(FIPS, adoption_year, timeline_after_adoption), ...]
-    """
-    adoptions = []
-
-    for fips, timeline in timelines.items():
-        for i in range(len(timeline)):
-            year, status = timeline[i]
-            if status == vendor:
-                # This is an adoption (switched TO vendor)
-                # Get remaining timeline after this point
-                future_timeline = timeline[i:]
-                adoptions.append((fips, year, future_timeline))
-
-    return adoptions
-
-
-def calculate_retention(adoptions, interval):
-    """
-    Calculate retention rate at a specific time interval.
+    For each adoption of this vendor (baseline or transition TO vendor):
+    - Find if/when they departed (transition away)
+    - Calculate duration and censoring status
 
     Args:
-        adoptions: List of (FIPS, adoption_year, timeline)
-        interval: Years since adoption (e.g., 2, 4, 6) or "14+" for long-term
-
-    Returns:
-        tuple: (retention_rate, n_at_risk, n_retained, n_churned)
-    """
-    at_risk = []  # Adoptions with enough follow-up time
-    retained = []  # Still using vendor at interval
-    churned = []   # Switched away before interval
-
-    # Handle "14+" interval specially - check current retention for all long-term users
-    if interval == "14+":
-        cutoff_year = CURRENT_YEAR - 14  # 2012 for 2026
-
-        for fips, adoption_year, timeline in adoptions:
-            # Include all adoptions from 2012 or earlier (14+ years ago)
-            if adoption_year <= cutoff_year:
-                at_risk.append(fips)
-
-                # Find current status in 2026
-                current_status = timeline[0][1]  # Start with adoption status
-
-                for year, status in timeline:
-                    if year <= CURRENT_YEAR:
-                        current_status = status
-                    else:
-                        break
-
-                # Check if still using the original vendor
-                original_vendor = timeline[0][1]
-                if current_status == original_vendor:
-                    retained.append(fips)
-                else:
-                    churned.append(fips)
-    else:
-        # Standard interval calculation
-        for fips, adoption_year, timeline in adoptions:
-            target_year = adoption_year + interval
-
-            # Skip if not enough follow-up time
-            if target_year > CURRENT_YEAR:
-                continue
-
-            at_risk.append(fips)
-
-            # Find status at target year
-            current_status = timeline[0][1]  # Start with adoption status
-
-            for year, status in timeline:
-                if year <= target_year:
-                    current_status = status
-                else:
-                    break
-
-            # Check if still using the original vendor
-            original_vendor = timeline[0][1]
-            if current_status == original_vendor:
-                retained.append(fips)
-            else:
-                churned.append(fips)
-
-    # Calculate retention rate
-    n_at_risk = len(at_risk)
-    n_retained = len(retained)
-    n_churned = len(churned)
-
-    if n_at_risk == 0:
-        return 0.0, 0, 0, 0
-
-    retention_rate = (n_retained / n_at_risk) * 100
-
-    return retention_rate, n_at_risk, n_retained, n_churned
-
-
-def analyze_vendor_retention(timelines, vendor):
-    """
-    Analyze retention for a specific vendor.
-
-    Args:
-        timelines: Pre-constructed timelines dict
+        transitions_df: Full transitions DataFrame
         vendor: Vendor name to analyze
 
     Returns:
-        dict: {interval: (retention_rate, n_at_risk)}
+        tuple: (durations, events, adoption_count, departure_count)
     """
-    # Identify all adoptions
-    adoptions = identify_adoptions(timelines, vendor)
+    # Get all transitions sorted by FIPS and To_Year
+    df = transitions_df.sort_values(['FIPS', 'To_Year'])
 
-    print(f"\n{vendor}:")
-    print(f"  Total adoptions: {len(adoptions)}")
+    # Find all adoptions of this vendor (baseline or transition TO this vendor)
+    adoptions = df[
+        (df['To_Poll_Book_Status'] == vendor) &
+        (df['Transition_Type'].isin(['to_electronic', 'vendor_change', 'baseline']))
+    ].copy()
 
-    # Calculate retention at each interval
-    retention_data = {}
+    durations = []
+    events = []  # True = departed (event), False = still with vendor (censored)
 
-    for interval in INTERVALS:
-        rate, n_at_risk, n_retained, n_churned = calculate_retention(adoptions, interval)
-        retention_data[interval] = (rate, n_at_risk)
+    for _, adoption in adoptions.iterrows():
+        fips = adoption['FIPS']
+        adoption_year = adoption['To_Year']
 
-        interval_label = f"{interval}-year" if interval != "14+" else "14+ year"
-        if n_at_risk > 0:
-            print(f"  {interval_label}: {rate:5.1f}% retention (n={n_at_risk}, retained={n_retained}, churned={n_churned})")
+        # Find subsequent transitions for this FIPS after adoption
+        subsequent = df[
+            (df['FIPS'] == fips) &
+            (df['To_Year'] > adoption_year) &
+            (df['From_Poll_Book_Status'] == vendor)
+        ]
+
+        if len(subsequent) > 0:
+            # They had a transition away from this vendor
+            first_departure = subsequent.iloc[0]
+            departure_year = first_departure['To_Year']
+            duration = departure_year - adoption_year
+            durations.append(duration)
+            events.append(True)  # Event observed (departed)
         else:
-            print(f"  {interval_label}: N/A (insufficient data)")
+            # No subsequent transitions - still with vendor (right-censored)
+            duration = CURRENT_YEAR - adoption_year
+            durations.append(duration)
+            events.append(False)
 
-    return retention_data
+    return (
+        np.array(durations),
+        np.array(events),
+        len(adoptions),
+        sum(events)
+    )
 
 
-def analyze_churn_destinations(timelines, vendor):
+def fit_survival_curves(transitions_df):
     """
-    Analyze where jurisdictions go when they leave a vendor.
+    Fit Kaplan-Meier survival curves for each vendor.
 
     Args:
-        timelines: Pre-constructed timelines dict
-        vendor: Vendor name to analyze
+        transitions_df: Full transitions DataFrame
 
     Returns:
-        Counter: {destination_vendor: count}
+        dict: {vendor: KaplanMeierFitter object}
     """
-    adoptions = identify_adoptions(timelines, vendor)
+    kmf_by_vendor = {}
 
-    destinations = defaultdict(int)
-
-    for fips, adoption_year, timeline in adoptions:
-        # Find if/when they churned
-        for i in range(len(timeline)):
-            year, status = timeline[i]
-            if status == vendor and i + 1 < len(timeline):
-                # Next status is the churn destination
-                next_status = timeline[i + 1][1]
-                if next_status != vendor:
-                    destinations[next_status] += 1
-                    break
-
-    return destinations
-
-
-def create_comparison_chart(vendor_retention_data, output_path):
-    """
-    Create grouped bar chart comparing vendor retention rates.
-
-    Args:
-        vendor_retention_data: {vendor: {interval: (rate, n_at_risk)}}
-        output_path: Path to save chart
-    """
-    fig, ax = plt.subplots(figsize=(16, 8))
-
-    # Prepare data for plotting
-    x = np.arange(len(INTERVALS))
-    width = 0.20  # Narrower bars for 4 vendors
-
-    for i, vendor in enumerate(VENDORS):
-        retention_data = vendor_retention_data[vendor]
-
-        rates = []
-        n_values = []
-
-        for interval in INTERVALS:
-            if interval in retention_data:
-                rate, n_at_risk = retention_data[interval]
-                rates.append(rate)
-                n_values.append(n_at_risk)
-            else:
-                rates.append(0)
-                n_values.append(0)
-
-        # Plot bars (adjust offset for 4 vendors)
-        offset = (i - 1.5) * width
-        bars = ax.bar(x + offset, rates, width, label=vendor, color=COLORS[vendor], alpha=0.8)
-
-        # Add value labels on bars
-        for j, (bar, rate, n) in enumerate(zip(bars, rates, n_values)):
-            if n > 0:
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height,
-                       f'{rate:.0f}%\n(n={n})',
-                       ha='center', va='bottom', fontsize=9)
-
-    # Customize chart
-    ax.set_xlabel('Years Since Adoption', fontsize=14)
-    ax.set_ylabel('Retention Rate (%)', fontsize=14)
-    ax.set_title('Poll Book Vendor Retention Comparison\nPercentage of jurisdictions still using vendor X years after adoption',
-                fontsize=16, fontweight='bold', pad=20)
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(interval) for interval in INTERVALS])
-    ax.set_ylim(0, 105)
-    ax.legend(fontsize=12, loc='upper right')
-    ax.grid(True, alpha=0.3, axis='y')
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"\n✓ Chart saved to {output_path}")
-
-
-def print_summary(vendor_retention_data, churn_data):
-    """Print summary statistics."""
-    print("\n" + "="*80)
-    print("RETENTION SUMMARY")
-    print("="*80)
-
-    # Compare vendors at each interval
-    for interval in INTERVALS:
-        interval_label = f"{interval}-Year" if interval != "14+" else "14+ Year"
-        print(f"\n{interval_label} Retention:")
-
-        # Sort vendors by retention rate
-        vendor_rates = []
-        for vendor in VENDORS:
-            if interval in vendor_retention_data[vendor]:
-                rate, n = vendor_retention_data[vendor][interval]
-                if n > 0:
-                    vendor_rates.append((vendor, rate, n))
-
-        vendor_rates.sort(key=lambda x: x[1], reverse=True)
-
-        for rank, (vendor, rate, n) in enumerate(vendor_rates, 1):
-            marker = "★" if rank == 1 else " "
-            print(f"  {marker} {rank}. {vendor:10s}: {rate:5.1f}% (n={n})")
-
-    # Churn destinations
-    print("\n" + "="*80)
-    print("CHURN DESTINATIONS")
-    print("="*80)
+    print("\nFitting Kaplan-Meier survival curves...")
+    print("-" * 60)
 
     for vendor in VENDORS:
-        destinations = churn_data[vendor]
-        if destinations:
-            print(f"\n{vendor} churned to:")
-            for dest, count in sorted(destinations.items(), key=lambda x: x[1], reverse=True)[:5]:
-                print(f"  - {dest:20s}: {count:3d} jurisdictions")
+        durations, events, n_adoptions, n_departures = calculate_vendor_survival_data(
+            transitions_df, vendor
+        )
+
+        n_censored = n_adoptions - n_departures
+        pct_censored = (n_censored / n_adoptions * 100) if n_adoptions > 0 else 0
+
+        print(f"\n{vendor}:")
+        print(f"  Adoptions: {n_adoptions:,}")
+        print(f"  Departures: {n_departures:,}")
+        print(f"  Censored (still with vendor): {n_censored:,} ({pct_censored:.1f}%)")
+
+        if len(durations) > 0 and n_departures > 0:
+            kmf = KaplanMeierFitter()
+            kmf.fit(durations, event_observed=events, label=vendor)
+            kmf_by_vendor[vendor] = kmf
+
+            # Print median survival
+            median = kmf.median_survival_time_
+            if not np.isnan(median) and not np.isinf(median):
+                print(f"  Median retention: {median:.0f} years")
+            else:
+                print(f"  Median retention: Not reached (>50% still retained)")
+
+            # Print survival at key time points
+            for t in [2, 4, 6, 8, 10]:
+                if t <= durations.max():
+                    surv = kmf.predict(t)
+                    print(f"  {t}-year retention: {surv:.1%}")
+        else:
+            print(f"  Insufficient departures for survival analysis")
+
+    return kmf_by_vendor
+
+
+def create_survival_comparison_chart(kmf_by_vendor, output_path):
+    """
+    Create comparison chart of vendor survival curves.
+
+    Args:
+        kmf_by_vendor: dict of {vendor: KaplanMeierFitter}
+        output_path: Path to save chart
+    """
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # Plot each vendor's survival curve
+    for vendor in VENDORS:
+        if vendor in kmf_by_vendor:
+            kmf = kmf_by_vendor[vendor]
+            kmf.plot_survival_function(
+                ax=ax,
+                ci_show=True,
+                color=COLORS[vendor],
+                linewidth=2.5,
+                alpha=0.9
+            )
+
+    # Add 50% reference line
+    ax.axhline(y=0.5, color='gray', linestyle=':', linewidth=1, alpha=0.5,
+               label='50% retention')
+
+    # Labels and title
+    ax.set_xlabel('Years Since Vendor Adoption', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Retention Probability', fontsize=13, fontweight='bold')
+    ax.set_title('Poll Book Vendor Retention Survival Curves (2006-2026)\n'
+                 'Probability of Remaining with Vendor Over Time',
+                 fontsize=15, fontweight='bold', pad=20)
+
+    # Set axis limits
+    ax.set_ylim(0, 1.05)
+    ax.set_xlim(0, 20)
+
+    # Grid
+    ax.grid(axis='both', alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_axisbelow(True)
+
+    # Legend
+    ax.legend(loc='lower left', fontsize=11, framealpha=0.9)
+
+    # Add annotations for key findings
+    annotations = []
+    for vendor in VENDORS:
+        if vendor in kmf_by_vendor:
+            kmf = kmf_by_vendor[vendor]
+            median = kmf.median_survival_time_
+            if not np.isnan(median) and not np.isinf(median):
+                annotations.append(f"{vendor}: {median:.0f}yr median")
+            else:
+                annotations.append(f"{vendor}: >50% retained")
+
+    if annotations:
+        annotation_text = "Median Retention:\n" + "\n".join(annotations)
+        ax.text(0.98, 0.98, annotation_text,
+                transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
+
+    plt.tight_layout()
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"\nChart saved to {output_path}")
+
+
+def analyze_churn_destinations(transitions_df):
+    """
+    Analyze where jurisdictions go when they leave each vendor.
+
+    Args:
+        transitions_df: Full transitions DataFrame
+
+    Returns:
+        dict: {vendor: {destination: count}}
+    """
+    print("\n" + "=" * 60)
+    print("CHURN DESTINATION ANALYSIS")
+    print("=" * 60)
+
+    # Filter to transitions away from electronic poll books
+    changes = transitions_df[
+        transitions_df['Transition_Type'].isin(['vendor_change', 'to_paper'])
+    ]
+
+    for vendor in VENDORS:
+        departures = changes[changes['From_Poll_Book_Status'] == vendor]
+
+        if len(departures) == 0:
+            print(f"\n{vendor}: No departures recorded")
+            continue
+
+        print(f"\n{vendor} -> (where did they go?):")
+        destinations = departures['To_Poll_Book_Status'].value_counts()
+
+        for dest, count in destinations.head(5).items():
+            pct = count / len(departures) * 100
+            print(f"  -> {dest}: {count:,} ({pct:.1f}%)")
+
+
+def print_summary(kmf_by_vendor):
+    """Print summary statistics."""
+    print("\n" + "=" * 60)
+    print("RETENTION SUMMARY")
+    print("=" * 60)
+
+    # Compare median retention
+    print("\nMedian Retention Times (50% still with vendor):")
+    medians = []
+    for vendor in VENDORS:
+        if vendor in kmf_by_vendor:
+            median = kmf_by_vendor[vendor].median_survival_time_
+            if not np.isnan(median) and not np.isinf(median):
+                medians.append((vendor, median))
+                print(f"  {vendor}: {median:.0f} years")
+            else:
+                print(f"  {vendor}: Not reached (>50% retained)")
+
+    # Compare 6-year retention
+    print("\n6-Year Retention Rates:")
+    rates_6yr = []
+    for vendor in VENDORS:
+        if vendor in kmf_by_vendor:
+            kmf = kmf_by_vendor[vendor]
+            try:
+                rate = kmf.predict(6)
+                rates_6yr.append((vendor, rate))
+            except Exception:
+                continue
+
+    rates_6yr.sort(key=lambda x: x[1], reverse=True)
+    for rank, (vendor, rate) in enumerate(rates_6yr, 1):
+        marker = "+" if rank == 1 else " "
+        print(f"  {marker} {rank}. {vendor}: {rate:.1%}")
 
 
 def main():
     """Main execution function."""
-    print("="*80)
-    print("POLL BOOK VENDOR RETENTION ANALYSIS")
-    print("="*80)
+    print("=" * 80)
+    print("POLL BOOK VENDOR RETENTION SURVIVAL ANALYSIS")
+    print("=" * 80)
 
-    # Load baseline data
-    print("\nLoading 2006 baseline data...")
-    baseline_df = load_baseline_data()
-    print(f"✓ Loaded {len(baseline_df)} jurisdictions")
+    # Load transitions data
+    print("\nLoading poll book transitions data...")
+    transitions_df = load_transitions()
 
-    # Load turnover data
-    print("\nLoading turnover data...")
-    turnover_df = load_turnover_data()
-    print(f"✓ Loaded {len(turnover_df)} turnover events")
-
-    # Reconstruct timelines
-    print("\nReconstructing poll book timelines...")
-    timelines = reconstruct_timelines(baseline_df, turnover_df)
-    print(f"✓ Reconstructed timelines for {len(timelines)} jurisdictions")
-
-    # Analyze each vendor
-    print("\n" + "-"*80)
-    print("ANALYZING RETENTION RATES")
-    print("-"*80)
-
-    vendor_retention_data = {}
-    churn_data = {}
-
-    for vendor in VENDORS:
-        vendor_retention_data[vendor] = analyze_vendor_retention(timelines, vendor)
-        churn_data[vendor] = analyze_churn_destinations(timelines, vendor)
+    # Fit survival curves
+    kmf_by_vendor = fit_survival_curves(transitions_df)
 
     # Create comparison chart
-    print("\n" + "-"*80)
-    print("CREATING COMPARISON CHART")
-    print("-"*80)
+    print("\n" + "-" * 60)
+    print("GENERATING CHARTS")
+    print("-" * 60)
 
-    output_path = 'outputs/figures/pollbook/vendor_retention_comparison.png'
-    create_comparison_chart(vendor_retention_data, output_path)
+    output_path = OUTPUT_DIR / 'pollbook_vendor_survival_curves.png'
+    create_survival_comparison_chart(kmf_by_vendor, output_path)
+
+    # Analyze churn destinations
+    analyze_churn_destinations(transitions_df)
 
     # Print summary
-    print_summary(vendor_retention_data, churn_data)
+    print_summary(kmf_by_vendor)
 
-    print("\n" + "="*80)
-    print("✓ ANALYSIS COMPLETE")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print("ANALYSIS COMPLETE")
+    print("=" * 80)
+    print()
+    print("Generated files:")
+    print(f"  - {OUTPUT_DIR / 'pollbook_vendor_survival_curves.png'}")
     print()
 
 

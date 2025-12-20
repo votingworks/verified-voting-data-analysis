@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate longitudinal machine usage data from year-by-year Verifier machine files.
+Generate longitudinal machine lifetime data from year-by-year Verifier machine files.
 
 Consolidates equipment usage across all years (2006-2026) into lifetime records
 showing when each (FIPS, Equipment Type, Model) combination was in use.
@@ -8,12 +8,12 @@ showing when each (FIPS, Equipment Type, Model) combination was in use.
 For each unique equipment:
 - First_Year: from Reported_First_Year_In_Use if valid, else earliest survey year
 - Last_Year: latest survey year the equipment appeared
-- Years_In_Span: count of survey years with data (allows inferring coverage gaps)
+- Length_Of_Use: years in service (Last_Year - First_Year + 2, accounting for 2-year cycles)
 
 Model names are normalized to handle rebrands (e.g., Optech IV-C -> Optech 400C).
 
 Output:
-- data/processed/machine_uses.csv - Equipment usage lifetime with first/last year
+- data/processed/machine_lifetimes.csv - Equipment lifetime records
 """
 
 import csv
@@ -43,6 +43,10 @@ MODEL_NORMALIZATION = {
     'ImageCast': 'ImageCast Precinct BMD',
     'AccuVote OSX': 'AccuVote OS',
     'AccuVote TSX': 'AccuVote TS',
+    # ES&S central scanners - group into one family
+    'DS450': 'DS Central',
+    'DS850': 'DS Central',
+    'DS950': 'DS Central',
     # Poll book consolidations
     'Vote Center Pollbook': 'LEDS Poll Book',
     'e-Poll Book': 'LEDS Poll Book',
@@ -80,6 +84,13 @@ COMBINED_NORMALIZATION = {
     ('IA SoS', 'Express Voter'): ('State of Iowa', 'Express Voter'),
 }
 
+# Vendor normalization (manufacturer → current parent company after acquisitions)
+VENDOR_NORMALIZATION = {
+    'Sequoia': 'Dominion',
+    'Diebold': 'Dominion',
+    'BPro': 'KNOWiNK',
+}
+
 
 def normalize_manufacturer(name):
     """Normalize manufacturer name to canonical form."""
@@ -101,6 +112,11 @@ def normalize_manufacturer_model(manufacturer, model):
     if key in COMBINED_NORMALIZATION:
         return COMBINED_NORMALIZATION[key]
     return (manufacturer, model)
+
+
+def normalize_vendor(manufacturer):
+    """Map manufacturer to current parent company after acquisitions."""
+    return VENDOR_NORMALIZATION.get(manufacturer, manufacturer)
 
 
 def load_machines_for_year(year):
@@ -245,6 +261,7 @@ def generate_usage_records(timelines):
             'Jurisdiction': jurisdiction,
             'Equipment_Type': equipment_type,
             'Manufacturer': manufacturer,
+            'Vendor': normalize_vendor(manufacturer),
             'Model': model,
             'First_Year': first_year,
             'Last_Year': last_entry['year'],
@@ -270,6 +287,7 @@ def write_output(records, output_path):
         'Jurisdiction',
         'Equipment_Type',
         'Manufacturer',
+        'Vendor',
         'Model',
         'First_Year',
         'Last_Year',
@@ -320,7 +338,7 @@ def main():
     print()
 
     # Write output
-    output_path = Path('data/processed/machine_uses.csv')
+    output_path = Path('data/processed/machine_lifetimes.csv')
     print(f"Writing to {output_path}...")
     count = write_output(records, output_path)
     print(f"✓ Wrote {count:,} records")

@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """
-Analyze vendor turnover patterns in between-system equipment changes.
+Analyze vendor turnover patterns in voting system changes.
 
+Uses jurisdiction_transitions.csv filtered to vendor and system transitions.
 Generates:
-1. Vendor switching matrix heatmap (Dominion, ES&S, Hart, Other)
-2. Vendor retention timeline by 2-year period
+1. Turnover volume by year
+2. Turnover percentage (jurisdictions and voters)
+3. Turnover + HAVA funding dual-axis chart
+4. Vendor switching matrix heatmap
 
-Reads from: ../data/voting_system_time_series.csv (filtered to Record_Type='between_system')
+Reads from:
+- data/processed/jurisdiction_transitions.csv
+- data/processed/jurisdictions_time_series.csv (for registered voters)
+- data/processed/hava_funding.csv
 """
 
 import pandas as pd
@@ -18,12 +24,15 @@ from collections import defaultdict
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
-DATA_DIR = PROJECT_ROOT / 'data'
-CONDENSED_DIR = DATA_DIR / 'processed' / 'jurisdictions'
+DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
 OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'equipment'
 
-# Major vendors to track separately
-MAJOR_VENDORS = ['Dominion', 'ES&S', 'Hart']
+# Major vendors to track separately (maps data names to display names)
+MAJOR_VENDORS = {
+    'Dominion': 'Dominion',
+    'ES&S': 'ES&S',
+    'Hart InterCivic': 'Hart',
+}
 
 
 def categorize_vendor(vendor_name):
@@ -34,90 +43,85 @@ def categorize_vendor(vendor_name):
     vendor = vendor_name.strip()
 
     if vendor in MAJOR_VENDORS:
-        return vendor
+        return MAJOR_VENDORS[vendor]
     else:
         return 'Other'
 
 
-def get_period_label(to_year):
-    """Convert To_Year to 2-year period label."""
-    # Round down to nearest even year
-    start_year = (to_year // 2) * 2
-    end_year = start_year + 2
-    return f"{start_year}-{end_year}"
-
-
-def load_turnovers_with_voters():
+def load_transitions():
     """
-    Load turnover data and join with condensed CSVs to add registered voters.
+    Load jurisdiction transitions filtered to vendor and system types.
 
     Returns:
-        DataFrame with additional 'Registered_Voters' column
+        DataFrame with turnover transitions
     """
-    # Load time series data and filter to between_system records
-    filepath = DATA_DIR / 'processed' / 'voting_system_time_series.csv'
-    df_turnovers = pd.read_csv(filepath)
-    df_turnovers = df_turnovers[df_turnovers['Record_Type'] == 'between_system'].copy()
+    filepath = DATA_DIR / 'jurisdiction_transitions.csv'
 
-    # Initialize voters column
-    df_turnovers['Registered_Voters'] = 0
+    if not filepath.exists():
+        raise FileNotFoundError(f"Transitions file not found: {filepath}")
 
-    # Get unique years from turnovers
-    years = df_turnovers['To_Year'].unique()
+    df = pd.read_csv(filepath)
 
-    # For each year, load condensed data and join
-    for year in sorted(years):
-        condensed_path = CONDENSED_DIR / f'{year}_verifier-jurisdictions-condensed.csv'
+    # Filter to vendor and system transitions (the significant equipment changes)
+    df = df[df['Transition_Type'].isin(['vendor', 'system'])].copy()
 
-        if not condensed_path.exists():
-            print(f"  Warning: Missing condensed data for {year}")
-            continue
+    print(f"✓ Loaded {len(df):,} vendor/system transitions")
 
-        # Read condensed data (skip header row)
-        df_year = pd.read_csv(condensed_path, skiprows=1)
+    return df
 
-        # Create lookup: FIPS -> Registered Voters
-        voters_lookup = df_year.set_index('FIPS code')['Registered Voters'].to_dict()
 
-        # Update turnovers for this year
-        year_mask = df_turnovers['To_Year'] == year
-        df_turnovers.loc[year_mask, 'Registered_Voters'] = df_turnovers.loc[year_mask, 'FIPS'].map(voters_lookup).fillna(0)
+def load_time_series():
+    """Load jurisdictions time series for registered voter data."""
+    filepath = DATA_DIR / 'jurisdictions_time_series.csv'
+
+    if not filepath.exists():
+        raise FileNotFoundError(f"Time series file not found: {filepath}")
+
+    return pd.read_csv(filepath)
+
+
+def join_with_voters(df, time_series_df):
+    """
+    Add Registered_Voters to transitions by joining with time series.
+
+    Args:
+        df: Transitions DataFrame
+        time_series_df: Time series DataFrame with Registered_Voters
+
+    Returns:
+        DataFrame with Registered_Voters added
+    """
+    df = df.copy()
+
+    # Create lookup from time series
+    voters_lookup = time_series_df.set_index(['FIPS', 'Year'])['Registered_Voters'].to_dict()
+
+    # Join on FIPS and To_Year
+    df['Registered_Voters'] = df.apply(
+        lambda row: voters_lookup.get((row['FIPS'], row['To_Year']), 0),
+        axis=1
+    )
 
     # Print join statistics
-    total = len(df_turnovers)
-    matched = (df_turnovers['Registered_Voters'] > 0).sum()
-    print(f"✓ Matched {matched:,}/{total:,} turnovers with voter data ({matched/total*100:.1f}%)")
+    total = len(df)
+    matched = (df['Registered_Voters'] > 0).sum()
+    print(f"✓ Matched {matched:,}/{total:,} transitions with voter data ({matched/total*100:.1f}%)")
 
-    return df_turnovers
+    return df
 
 
-def load_yearly_totals():
+def load_yearly_totals(time_series_df):
     """
-    Load total jurisdictions and registered voters for each year.
+    Calculate total jurisdictions and registered voters for each year.
+
+    Args:
+        time_series_df: Time series DataFrame
 
     Returns:
         tuple: (jurisdictions_by_year, voters_by_year) dicts
     """
-    jurisdictions_by_year = {}
-    voters_by_year = {}
-
-    # Years in the condensed data
-    years = range(2006, 2028, 2)
-
-    for year in years:
-        filepath = CONDENSED_DIR / f'{year}_verifier-jurisdictions-condensed.csv'
-
-        if not filepath.exists():
-            continue
-
-        # Read CSV (skip header row)
-        df = pd.read_csv(filepath, skiprows=1)
-
-        # Count jurisdictions
-        jurisdictions_by_year[year] = len(df)
-
-        # Sum registered voters (exclude NaN values)
-        voters_by_year[year] = df['Registered Voters'].dropna().sum()
+    jurisdictions_by_year = time_series_df.groupby('Year')['FIPS'].count().to_dict()
+    voters_by_year = time_series_df.groupby('Year')['Registered_Voters'].sum().to_dict()
 
     return jurisdictions_by_year, voters_by_year
 
@@ -142,59 +146,19 @@ def get_turnover_jurisdictions_by_year(df):
     return turnover_by_year
 
 
-def get_turnover_voters_by_year(df):
-    """
-    Load condensed data and calculate registered voters in jurisdictions with turnovers.
-
-    Args:
-        df: DataFrame with To_Year and FIPS columns
-
-    Returns:
-        dict: Year -> total registered voters in turnover jurisdictions
-    """
-    # Get FIPS of jurisdictions with turnovers by year
-    turnover_by_year = get_turnover_jurisdictions_by_year(df)
-
-    voters_by_year = {}
-
-    for year in turnover_by_year.keys():
-        filepath = CONDENSED_DIR / f'{year}_verifier-jurisdictions-condensed.csv'
-
-        if not filepath.exists():
-            continue
-
-        # Read condensed data for this year
-        year_df = pd.read_csv(filepath, skiprows=1)
-
-        # Filter to jurisdictions with turnovers
-        turnover_fips = turnover_by_year[year]
-        turnover_jurisdictions = year_df[year_df['FIPS code'].isin(turnover_fips)]
-
-        # Sum registered voters
-        voters_by_year[year] = turnover_jurisdictions['Registered Voters'].dropna().sum()
-
-    return voters_by_year
-
-
 def load_hava_funding_by_even_year():
     """
-    Load HAVA funding data and aggregate by even years (rounded down).
-
-    Groups odd years with the preceding even year:
-    - 2003 → 2002
-    - 2009 → 2008
-    - 2011 → 2010
+    Load HAVA funding data and aggregate by even years.
 
     Returns:
         dict: {even_year: total_funding_dollars}
     """
-    hava_filepath = DATA_DIR / 'processed' / 'hava_funding.csv'
+    hava_filepath = DATA_DIR / 'hava_funding.csv'
 
     if not hava_filepath.exists():
         print(f"  Warning: HAVA funding file not found at {hava_filepath}")
         return {}
 
-    # Load HAVA data
     df_hava = pd.read_csv(hava_filepath)
 
     # Convert funding columns to numeric
@@ -211,48 +175,30 @@ def load_hava_funding_by_even_year():
     funding_by_year = df_hava.groupby('Even_Year')['Total_Funding'].sum().to_dict()
 
     print(f"✓ Loaded HAVA funding for {len(funding_by_year)} even-year periods")
-    for year in sorted(funding_by_year.keys()):
-        print(f"    {year}: ${funding_by_year[year]:,.0f}")
 
     return funding_by_year
 
 
-def load_initial_deployments_from_2006(start_year=2000):
+def load_initial_deployments_from_time_series(time_series_df, start_year=2000):
     """
-    Load initial equipment deployment data from 2006 verifier file.
-
-    Uses "Primary Voting Equipment - First Year In Use" field to infer
-    when equipment was first deployed, extending turnover data backwards.
+    Infer initial equipment deployments from First_Year_In_Use in time series.
 
     Args:
-        start_year: Earliest year to include (default: 2000)
+        time_series_df: Time series DataFrame
+        start_year: Earliest year to include
 
     Returns:
-        dict: {
-            'deployments_by_year': {year: count_of_jurisdictions},
-            'total_jurisdictions': total count in 2006,
-            'percentages_by_year': {year: percentage}
-        }
+        dict with deployments_by_year and percentages_by_year
     """
-    filepath = CONDENSED_DIR / '2006_verifier-jurisdictions-condensed.csv'
+    # Get 2006 data (first year in time series)
+    df_2006 = time_series_df[time_series_df['Year'] == 2006].copy()
 
-    if not filepath.exists():
-        print(f"  Warning: 2006 condensed file not found")
-        return {'deployments_by_year': {}, 'total_jurisdictions': 0, 'percentages_by_year': {}}
-
-    # Read 2006 data (skip title row)
-    df_2006 = pd.read_csv(filepath, skiprows=1)
-
-    # Count total jurisdictions
     total_jurisdictions = len(df_2006)
 
-    # Extract first year in use (convert to numeric, handle non-numeric)
-    df_2006['First_Year'] = pd.to_numeric(
-        df_2006['Primary Voting Equipment - First Year In Use'],
-        errors='coerce'
-    )
+    # Extract first year in use
+    df_2006['First_Year'] = pd.to_numeric(df_2006['First_Year_In_Use'], errors='coerce')
 
-    # Filter to valid years >= start_year and <= 2006
+    # Filter to valid years
     df_filtered = df_2006[
         (df_2006['First_Year'] >= start_year) &
         (df_2006['First_Year'] <= 2006) &
@@ -264,8 +210,6 @@ def load_initial_deployments_from_2006(start_year=2000):
 
     # Count deployments by even year
     deployments_by_year = df_filtered['Even_Year'].value_counts().to_dict()
-
-    # Convert year keys from numpy types to int
     deployments_by_year = {int(year): count for year, count in deployments_by_year.items()}
 
     # Calculate percentages
@@ -274,11 +218,7 @@ def load_initial_deployments_from_2006(start_year=2000):
         for year, count in deployments_by_year.items()
     }
 
-    print(f"✓ Loaded initial deployments from 2006 file ({total_jurisdictions:,} jurisdictions)")
-    for year in sorted(deployments_by_year.keys()):
-        pct = percentages_by_year[year]
-        count = deployments_by_year[year]
-        print(f"    {year}: {count:,} jurisdictions ({pct:.1f}%)")
+    print(f"✓ Loaded initial deployments from time series ({total_jurisdictions:,} jurisdictions)")
 
     return {
         'deployments_by_year': deployments_by_year,
@@ -289,7 +229,7 @@ def load_initial_deployments_from_2006(start_year=2000):
 
 def create_turnover_volume_chart(df):
     """
-    Create bar chart showing total number of between-system turnovers per year.
+    Create bar chart showing total number of turnovers per year.
 
     Args:
         df: DataFrame with To_Year column
@@ -310,12 +250,11 @@ def create_turnover_volume_chart(df):
 
     # Styling
     ax.set_xlabel('Year', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Number of System Upgrades', fontsize=13, fontweight='bold')
-    ax.set_title('Volume of System Upgrades Over Time (2008-2026)\n'
-                 'Total Jurisdictions Changing Voting Systems Each Year',
+    ax.set_ylabel('Number of System Changes', fontsize=13, fontweight='bold')
+    ax.set_title('Volume of Voting System Changes Over Time\n'
+                 'Vendor and System Transitions by Year',
                  fontsize=15, fontweight='bold', pad=20)
 
-    # Add grid for readability
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
 
     # Add value labels on top of bars
@@ -325,11 +264,12 @@ def create_turnover_volume_chart(df):
                 f'{int(count):,}',
                 ha='center', va='bottom', fontsize=9, fontweight='bold')
 
-    # Set x-axis to show all years
     ax.set_xticks(years)
     ax.set_xticklabels([str(y) for y in years], rotation=45, ha='right')
 
     plt.tight_layout()
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / 'upgrade_volume_by_year.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
@@ -347,10 +287,8 @@ def create_turnover_percentage_jurisdictions_chart(df, total_jurisdictions_by_ye
         df: DataFrame with To_Year and FIPS columns
         total_jurisdictions_by_year: dict of year -> total jurisdiction count
     """
-    # Get number of jurisdictions with turnovers per year
     turnover_by_year = get_turnover_jurisdictions_by_year(df)
 
-    # Calculate percentages
     years = sorted(turnover_by_year.keys())
     percentages = []
 
@@ -365,33 +303,26 @@ def create_turnover_percentage_jurisdictions_chart(df, total_jurisdictions_by_ye
 
         percentages.append(pct)
 
-    # Create bar chart
     fig, ax = plt.subplots(figsize=(14, 7))
 
     bars = ax.bar(years, percentages, color='darkorange', edgecolor='black', linewidth=0.5, width=0.8)
 
-    # Styling
     ax.set_xlabel('Year', fontsize=13, fontweight='bold')
     ax.set_ylabel('Percentage of Jurisdictions (%)', fontsize=13, fontweight='bold')
-    ax.set_title('System Upgrades as Percentage of All Jurisdictions (2008-2026)\n'
-                 'Jurisdictions Changing Voting Systems Each Year',
+    ax.set_title('System Changes as Percentage of All Jurisdictions\n'
+                 'Jurisdictions with Vendor or System Transitions Each Year',
                  fontsize=15, fontweight='bold', pad=20)
 
-    # Add grid for readability
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
 
-    # Add value labels on top of bars
     for bar, pct in zip(bars, percentages):
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width() / 2., height,
                 f'{pct:.1f}%',
                 ha='center', va='bottom', fontsize=9, fontweight='bold')
 
-    # Set x-axis to show all years
     ax.set_xticks(years)
     ax.set_xticklabels([str(y) for y in years], rotation=45, ha='right')
-
-    # Set y-axis range
     ax.set_ylim(0, max(percentages) * 1.15)
 
     plt.tight_layout()
@@ -407,54 +338,46 @@ def create_turnover_percentage_voters_chart(df, total_voters_by_year):
     Create bar chart showing turnover as percentage of all registered voters.
 
     Args:
-        df: DataFrame with To_Year and FIPS columns
+        df: DataFrame with To_Year and Registered_Voters columns
         total_voters_by_year: dict of year -> total registered voters
     """
-    # Get registered voters in jurisdictions with turnovers per year
-    turnover_voters_by_year = get_turnover_voters_by_year(df)
+    # Sum registered voters by year for jurisdictions with transitions
+    turnover_voters = df.groupby('To_Year')['Registered_Voters'].sum().to_dict()
 
-    # Calculate percentages
-    years = sorted(turnover_voters_by_year.keys())
+    years = sorted(turnover_voters.keys())
     percentages = []
 
     for year in years:
-        turnover_voters = turnover_voters_by_year.get(year, 0)
-        total_voters = total_voters_by_year.get(year, 0)
+        turnover_v = turnover_voters.get(year, 0)
+        total_v = total_voters_by_year.get(year, 0)
 
-        if total_voters > 0:
-            pct = (turnover_voters / total_voters) * 100
+        if total_v > 0:
+            pct = (turnover_v / total_v) * 100
         else:
             pct = 0
 
         percentages.append(pct)
 
-    # Create bar chart
     fig, ax = plt.subplots(figsize=(14, 7))
 
     bars = ax.bar(years, percentages, color='mediumseagreen', edgecolor='black', linewidth=0.5, width=0.8)
 
-    # Styling
     ax.set_xlabel('Year', fontsize=13, fontweight='bold')
     ax.set_ylabel('Percentage of Registered Voters (%)', fontsize=13, fontweight='bold')
-    ax.set_title('System Upgrades as Percentage of All Registered Voters (2008-2026)\n'
-                 'Registered Voters in Jurisdictions Changing Voting Systems Each Year',
+    ax.set_title('System Changes as Percentage of All Registered Voters\n'
+                 'Registered Voters in Jurisdictions with Vendor or System Transitions',
                  fontsize=15, fontweight='bold', pad=20)
 
-    # Add grid for readability
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
 
-    # Add value labels on top of bars
     for bar, pct in zip(bars, percentages):
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width() / 2., height,
                 f'{pct:.1f}%',
                 ha='center', va='bottom', fontsize=9, fontweight='bold')
 
-    # Set x-axis to show all years
     ax.set_xticks(years)
     ax.set_xticklabels([str(y) for y in years], rotation=45, ha='right')
-
-    # Set y-axis range
     ax.set_ylim(0, max(percentages) * 1.15)
 
     plt.tight_layout()
@@ -465,21 +388,19 @@ def create_turnover_percentage_voters_chart(df, total_voters_by_year):
     print(f"✓ Chart saved to {output_path}")
 
 
-def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
+def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, time_series_df):
     """
     Create dual-axis chart showing turnover percentage and HAVA funding over time.
 
-    Left axis: Turnover percentage of jurisdictions (actual + inferred)
-    Right axis: HAVA funding in millions of dollars
-
     Args:
-        df: DataFrame with To_Year and FIPS columns
+        df: Transitions DataFrame
         total_jurisdictions_by_year: dict of year -> total jurisdiction count
+        time_series_df: Time series DataFrame for initial deployments
     """
-    # Load initial deployments from 2006 (for years 2000-2006)
-    initial_deployments = load_initial_deployments_from_2006(start_year=2000)
+    # Load initial deployments from time series
+    initial_deployments = load_initial_deployments_from_time_series(time_series_df, start_year=2000)
 
-    # Get turnover data (reuse existing logic)
+    # Get turnover data
     turnover_by_year = get_turnover_jurisdictions_by_year(df)
 
     # Calculate turnover percentages
@@ -497,10 +418,10 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
 
         percentages.append(pct)
 
-    # Load HAVA funding data
+    # Load HAVA funding
     hava_funding = load_hava_funding_by_even_year()
 
-    # Determine full year range (extend backwards to include all data sources)
+    # Determine full year range
     min_year_hava = min(hava_funding.keys()) if hava_funding else 2008
     min_year_turnover = min(years_turnover) if years_turnover else 2008
     min_year_deployments = min(initial_deployments['percentages_by_year'].keys()) if initial_deployments['percentages_by_year'] else 2008
@@ -512,12 +433,11 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
     # Create complete year range (even years only)
     all_years = list(range(min_year, max_year + 1, 2))
 
-    # Prepare data aligned to all years
+    # Prepare aligned data
     turnover_pcts_aligned = []
     hava_funding_aligned = []
 
     for year in all_years:
-        # Turnover percentage - prioritize actual turnover data (2008+), fall back to inferred deployments (2000-2006)
         if year in years_turnover:
             idx = years_turnover.index(year)
             turnover_pcts_aligned.append(percentages[idx])
@@ -526,44 +446,40 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
         else:
             turnover_pcts_aligned.append(0)
 
-        # HAVA funding in millions (0 if year not in HAVA data)
         funding_dollars = hava_funding.get(year, 0)
-        hava_funding_aligned.append(funding_dollars / 1_000_000)  # Convert to millions
+        hava_funding_aligned.append(funding_dollars / 1_000_000)
 
     # Create figure with dual axes
     fig, ax1 = plt.subplots(figsize=(16, 8))
 
-    # Left axis: Turnover percentage (bars)
-    # Split into two series for different visual styling
     color_turnover = 'darkorange'
 
     # Split years into actual (2008+) and inferred (pre-2008)
     years_actual = [y for y in all_years if y >= 2008]
     years_inferred = [y for y in all_years if y < 2008]
 
-    # Get corresponding percentages
     actual_pcts = [turnover_pcts_aligned[all_years.index(y)] for y in years_actual]
     inferred_pcts = [turnover_pcts_aligned[all_years.index(y)] for y in years_inferred]
 
-    # Plot inferred initial deployments (2000-2006): Lighter bars with hatching
+    # Plot inferred initial deployments (pre-2008)
     if years_inferred and any(p > 0 for p in inferred_pcts):
         ax1.bar(years_inferred, inferred_pcts, color=color_turnover,
                 edgecolor='black', linewidth=0.5, width=1.5, alpha=0.4,
                 hatch='//', label='Initial Deployments (Inferred from 2006)')
 
-    # Plot actual turnovers (2008+): Solid bars
+    # Plot actual turnovers (2008+)
     if years_actual:
         ax1.bar(years_actual, actual_pcts, color=color_turnover,
                 edgecolor='black', linewidth=0.5, width=1.5, alpha=0.8,
-                label='Upgrade % (Actual)')
+                label='System Changes % (Actual)')
 
     ax1.set_xlabel('Year', fontsize=13, fontweight='bold')
-    ax1.set_ylabel('Upgrade Percentage of Jurisdictions (%)',
+    ax1.set_ylabel('System Change Percentage of Jurisdictions (%)',
                    fontsize=13, fontweight='bold', color=color_turnover)
     ax1.tick_params(axis='y', labelcolor=color_turnover)
     ax1.set_ylim(0, max(turnover_pcts_aligned) * 1.15 if turnover_pcts_aligned else 100)
 
-    # Right axis: HAVA funding (line)
+    # Right axis: HAVA funding
     ax2 = ax1.twinx()
     color_hava = 'green'
     ax2.plot(all_years, hava_funding_aligned, color=color_hava,
@@ -573,16 +489,13 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
     ax2.set_ylabel('HAVA Funding (Millions $)', fontsize=13, fontweight='bold', color=color_hava)
     ax2.tick_params(axis='y', labelcolor=color_hava)
 
-    # Title
-    ax1.set_title('System Upgrade Percentage vs. HAVA Funding Investment (2000-2026)\n'
-                  'Comparing System Upgrades with HAVA Funding',
+    ax1.set_title('System Changes vs. HAVA Funding Investment\n'
+                  'Comparing Equipment Transitions with Federal Funding',
                   fontsize=15, fontweight='bold', pad=20)
 
-    # X-axis labels
     ax1.set_xticks(all_years)
     ax1.set_xticklabels([str(y) for y in all_years], rotation=45, ha='right')
 
-    # Grid
     ax1.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
 
     # Combined legend
@@ -591,7 +504,6 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year):
     ax1.legend(lines1 + lines2, labels1 + labels2,
                loc='upper left', fontsize=11, framealpha=0.9)
 
-    # Save
     plt.tight_layout()
     output_path = OUTPUT_DIR / 'upgrade_and_hava_funding.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
@@ -605,28 +517,21 @@ def create_vendor_switching_matrix(df):
     Create vendor switching matrix heatmap weighted by registered voters.
 
     Args:
-        df: DataFrame with From_Vendor, To_Vendor, and Registered_Voters columns
+        df: DataFrame with From/To vendor and Registered_Voters columns
 
     Returns:
-        DataFrame: Transition probability matrix (weighted by voters)
+        DataFrame: Transition probability matrix
     """
-    # Exclude Hand Count transitions (not a vendor)
-    df_filtered = df[
-        (df['From_Vendor'] != 'Hand Count') &
-        (df['To_Vendor'] != 'Hand Count')
-    ].copy()
+    df_filtered = df.copy()
 
-    # Filter out 2-year same-vendor transitions (likely coordinated upgrades)
-    df_filtered = df_filtered[
-        ~((df_filtered['Vendor_Retained'] == True) &
-          (df_filtered['Years_Between'] == 2))
-    ].copy()
+    # Filter to vendor transitions only (where vendor actually changed)
+    df_filtered = df_filtered[df_filtered['Transition_Type'] == 'vendor']
 
     # Categorize vendors
-    df_filtered['From_Cat'] = df_filtered['From_Vendor'].apply(categorize_vendor)
-    df_filtered['To_Cat'] = df_filtered['To_Vendor'].apply(categorize_vendor)
+    df_filtered['From_Cat'] = df_filtered['From_Primary_Voting_Vendor'].apply(categorize_vendor)
+    df_filtered['To_Cat'] = df_filtered['To_Primary_Voting_Vendor'].apply(categorize_vendor)
 
-    # Build transition matrix - SUM REGISTERED VOTERS instead of counting
+    # Build transition matrix weighted by voters
     vendors = ['Dominion', 'ES&S', 'Hart', 'Other']
     voter_sums = pd.DataFrame(0.0, index=vendors, columns=vendors)
 
@@ -636,7 +541,7 @@ def create_vendor_switching_matrix(df):
         voters = row['Registered_Voters']
         voter_sums.loc[from_vendor, to_vendor] += voters
 
-    # Calculate transition probabilities (row-wise percentages based on voters)
+    # Calculate transition probabilities (row-wise percentages)
     transition_probs = voter_sums.div(voter_sums.sum(axis=1), axis=0) * 100
 
     # Create heatmap
@@ -644,9 +549,9 @@ def create_vendor_switching_matrix(df):
 
     sns.heatmap(
         transition_probs,
-        annot=True,              # Show percentages in cells
-        fmt='.1f',               # 1 decimal place
-        cmap='Greens',           # White (low) → Green (high)
+        annot=True,
+        fmt='.1f',
+        cmap='Greens',
         cbar_kws={'label': 'Transition Probability (%)'},
         linewidths=0.5,
         linecolor='gray',
@@ -655,11 +560,10 @@ def create_vendor_switching_matrix(df):
         ax=ax
     )
 
-    # Styling
     ax.set_xlabel('Vendor TO', fontsize=14, fontweight='bold')
     ax.set_ylabel('Vendor FROM', fontsize=14, fontweight='bold')
-    ax.set_title('Voting System Vendor Switching Matrix (2006-2026)\n'
-                 'Vendor Transition Probabilities in System Upgrades (Weighted by Registered Voters)',
+    ax.set_title('Vendor Switching Matrix (2006-2026)\n'
+                 'Transition Probabilities Weighted by Registered Voters',
                  fontsize=16, fontweight='bold', pad=20)
 
     plt.tight_layout()
@@ -672,107 +576,32 @@ def create_vendor_switching_matrix(df):
     return transition_probs
 
 
-def create_vendor_retention_timeline(df):
-    """
-    Create vendor retention timeline chart weighted by registered voters.
-
-    Args:
-        df: DataFrame with From_Vendor, To_Year, Vendor_Retained, and Registered_Voters columns
-
-    Returns:
-        dict: Retention rates by period and vendor (weighted by voters)
-    """
-    # Add period labels
-    df_periods = df.copy()
-    df_periods['Period'] = df_periods['To_Year'].apply(get_period_label)
-
-    # Get unique periods and sort them
-    periods = sorted(df_periods['Period'].unique())
-
-    # Calculate retention rates per vendor per period (weighted by voters)
-    retention_data = defaultdict(list)
-
-    for period in periods:
-        period_df = df_periods[df_periods['Period'] == period].copy()
-
-        # Filter out 2-year same-vendor transitions (likely coordinated upgrades)
-        period_df = period_df[
-            ~((period_df['Vendor_Retained'] == True) &
-              (period_df['Years_Between'] == 2))
-        ].copy()
-
-        for vendor in MAJOR_VENDORS:
-            vendor_transitions = period_df[period_df['From_Vendor'] == vendor]
-
-            # Sum total voters for this vendor in this period
-            total_voters = vendor_transitions['Registered_Voters'].sum()
-
-            # Apply minimum sample size filter - require at least 5 jurisdictions
-            if len(vendor_transitions) >= 5 and total_voters > 0:
-                # Sum voters who retained same vendor
-                retained_voters = vendor_transitions[
-                    vendor_transitions['Vendor_Retained'] == True
-                ]['Registered_Voters'].sum()
-
-                retention_rate = (retained_voters / total_voters) * 100
-            else:
-                retention_rate = np.nan  # Insufficient data
-
-            retention_data[vendor].append(retention_rate)
-
-    # Create line chart
-    fig, ax = plt.subplots(figsize=(14, 7))
-
-    # Plot each vendor as a line
-    colors = {
-        'Dominion': '#4169E1',  # Royal blue
-        'ES&S': '#228B22',      # Forest green
-        'Hart': '#9370DB'       # Medium purple
-    }
-
-    for vendor in MAJOR_VENDORS:
-        ax.plot(periods, retention_data[vendor],
-                marker='o', linewidth=2.5, markersize=8,
-                color=colors[vendor], label=vendor)
-
-    # Styling
-    ax.set_xlabel('2-Year Period', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Retention Rate (%)', fontsize=13, fontweight='bold')
-    ax.set_title('Vendor Retention Rates Upon System Upgrades (2006-2026)\n'
-                 'Percentage of Registered Voters Retaining Same Vendor in System Upgrade',
-                 fontsize=15, fontweight='bold', pad=20)
-
-    ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
-    ax.legend(loc='best', fontsize=11, framealpha=0.9)
-    ax.set_ylim(0, 100)
-
-    # Add horizontal reference line at 50%
-    ax.axhline(y=50, color='gray', linestyle=':', linewidth=1, alpha=0.5)
-
-    # Rotate x-axis labels for readability
-    plt.xticks(rotation=45, ha='right')
-
-    plt.tight_layout()
-    output_path = OUTPUT_DIR / 'vendor_retention_timeline.png'
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"✓ Chart saved to {output_path}")
-
-    return retention_data
-
-
 def main():
     """Main processing pipeline."""
     print("=" * 80)
-    print("VENDOR TURNOVER ANALYSIS (WEIGHTED BY REGISTERED VOTERS)")
+    print("VENDOR TURNOVER ANALYSIS")
     print("=" * 80)
     print()
 
-    # Load data with voter information
-    print("Loading between-system turnovers with registered voters...")
-    df = load_turnovers_with_voters()
-    print(f"✓ Loaded {len(df):,} transitions")
+    # Load transitions (vendor + system only)
+    print("Loading jurisdiction transitions (vendor + system types)...")
+    df = load_transitions()
+    print()
+
+    # Load time series for voter data
+    print("Loading jurisdictions time series for voter data...")
+    time_series_df = load_time_series()
+    print(f"✓ Loaded {len(time_series_df):,} time series records")
+    print()
+
+    # Join transitions with voter data
+    print("Joining transitions with registered voters...")
+    df = join_with_voters(df, time_series_df)
+    print()
+
+    # Get yearly totals
+    total_jurisdictions_by_year, total_voters_by_year = load_yearly_totals(time_series_df)
+    print(f"✓ Calculated totals for {len(total_jurisdictions_by_year)} years")
     print()
 
     # Print voter weighting statistics
@@ -783,18 +612,16 @@ def main():
     print(f"  Median voters per transition: {df['Registered_Voters'].median():,.0f}")
     print()
 
-    # Load yearly totals for percentage calculations
-    print("Loading yearly totals from condensed data...")
-    total_jurisdictions_by_year, total_voters_by_year = load_yearly_totals()
-    print(f"✓ Loaded totals for {len(total_jurisdictions_by_year)} years")
+    # Generate charts
+    print("-" * 60)
+    print("GENERATING CHARTS")
+    print("-" * 60)
     print()
 
-    # Generate turnover volume chart
     print("Generating turnover volume by year chart...")
     year_counts = create_turnover_volume_chart(df)
     print()
 
-    # Generate percentage charts
     print("Generating turnover percentage (jurisdictions) chart...")
     create_turnover_percentage_jurisdictions_chart(df, total_jurisdictions_by_year)
     print()
@@ -803,40 +630,40 @@ def main():
     create_turnover_percentage_voters_chart(df, total_voters_by_year)
     print()
 
-    # Generate dual-axis chart (turnover + HAVA)
     print("Generating turnover + HAVA funding dual-axis chart...")
-    create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year)
+    create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, time_series_df)
     print()
 
     # Print vendor summary statistics
-    print("Vendor Distribution:")
-    from_counts = df['From_Vendor'].value_counts()
-    to_counts = df['To_Vendor'].value_counts()
-    print(f"  From: {len(from_counts)} unique vendors")
-    print(f"  To: {len(to_counts)} unique vendors")
+    print("-" * 60)
+    print("VENDOR STATISTICS")
+    print("-" * 60)
     print()
 
-    print("Major Vendor Statistics:")
-    for vendor in MAJOR_VENDORS:
-        from_count = (df['From_Vendor'] == vendor).sum()
-        to_count = (df['To_Vendor'] == vendor).sum()
-        retained = ((df['From_Vendor'] == vendor) & (df['Vendor_Retained'] == True)).sum()
-        if from_count > 0:
-            retention_pct = (retained / from_count) * 100
-            print(f"  {vendor}:")
-            print(f"    - From: {from_count:,} transitions ({from_count/len(df)*100:.1f}%)")
-            print(f"    - To: {to_count:,} transitions ({to_count/len(df)*100:.1f}%)")
-            print(f"    - Retention: {retained:,} ({retention_pct:.1f}%)")
+    # Filter to vendor transitions for stats
+    vendor_transitions = df[df['Transition_Type'] == 'vendor']
+
+    print(f"Vendor Transitions: {len(vendor_transitions):,}")
+    print(f"System Transitions (same vendor): {len(df) - len(vendor_transitions):,}")
+    print()
+
+    print("Major Vendor Statistics (vendor transitions only):")
+    for data_name, display_name in MAJOR_VENDORS.items():
+        from_count = (vendor_transitions['From_Primary_Voting_Vendor'] == data_name).sum()
+        to_count = (vendor_transitions['To_Primary_Voting_Vendor'] == data_name).sum()
+        net = to_count - from_count
+
+        if from_count > 0 or to_count > 0:
+            direction = "↑" if net > 0 else "↓" if net < 0 else "→"
+            print(f"  {display_name}:")
+            print(f"    - Lost to other vendors: {from_count:,}")
+            print(f"    - Gained from other vendors: {to_count:,}")
+            print(f"    - Net: {direction} {abs(net):,}")
     print()
 
     # Generate switching matrix
     print("Generating vendor switching matrix...")
     transition_matrix = create_vendor_switching_matrix(df)
-    print()
-
-    # Generate retention timeline
-    print("Generating vendor retention timeline...")
-    retention_data = create_vendor_retention_timeline(df)
     print()
 
     # Summary
@@ -845,12 +672,11 @@ def main():
     print("=" * 80)
     print()
     print("Generated files:")
-    print("  - equipment_analysis/upgrade_volume_by_year.png")
-    print("  - equipment_analysis/upgrade_percentage_jurisdictions.png")
-    print("  - equipment_analysis/upgrade_percentage_voters.png")
-    print("  - equipment_analysis/upgrade_and_hava_funding.png")
-    print("  - equipment_analysis/vendor_switching_matrix.png")
-    print("  - equipment_analysis/vendor_retention_timeline.png")
+    print(f"  - {OUTPUT_DIR / 'upgrade_volume_by_year.png'}")
+    print(f"  - {OUTPUT_DIR / 'upgrade_percentage_jurisdictions.png'}")
+    print(f"  - {OUTPUT_DIR / 'upgrade_percentage_voters.png'}")
+    print(f"  - {OUTPUT_DIR / 'upgrade_and_hava_funding.png'}")
+    print(f"  - {OUTPUT_DIR / 'vendor_switching_matrix.png'}")
     print()
 
 

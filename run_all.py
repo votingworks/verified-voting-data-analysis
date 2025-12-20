@@ -4,11 +4,10 @@ Run the complete data processing pipeline.
 
 This script executes all data processing and analysis scripts in order:
 0. Extract verifier data from zip files and process HAVA funding HTML
-1. Condense jurisdictions for all years (2006-2026)
-2. Generate summary reports for all years
-3. Generate turnover analysis
-4. Generate state-level uniformity data for all years
-5. Run all data quality tools and equipment analysis
+1. Generate machine lifetimes from extracted data
+2. Generate jurisdictions time series
+3. Generate jurisdiction transitions
+4. Run all analysis scripts
 
 Excludes: pollbook scripts (data fetching scripts only run on saved data)
 
@@ -51,7 +50,6 @@ def run_all():
     print("=" * 80)
     print()
 
-    total_years = len(YEARS)
     failed_steps = []
 
     # Phase 0: Extract and process source data
@@ -73,94 +71,71 @@ def run_all():
         failed_steps.append(("HAVA funding scrape", "etl/scrape_eac_hava_funding.py"))
     print()
 
-    # Phase 1: Condense all years
-    print(f"Phase 1: Condensing jurisdiction data for {total_years} years...")
+    # Phase 1: Generate core data files
+    print("Phase 1: Generating core data files...")
     print("-" * 80)
-
-    for i, year in enumerate(YEARS, 1):
-        print(f"[{i}/{total_years}] {year}")
-        success = run_command(
-            f"python3 etl/condense_jurisdictions.py {year}",
-            "  Condensing"
-        )
-        if not success:
-            failed_steps.append((f"{year} condensing", "etl/condense_jurisdictions.py"))
-        print()
-
-    # Phase 2: Generate summary reports for all years
-    print()
-    print(f"Phase 2: Generating summary reports for {total_years} years...")
-    print("-" * 80)
-
-    for i, year in enumerate(YEARS, 1):
-        print(f"[{i}/{total_years}] {year}")
-        success = run_command(
-            f"python3 etl/generate_summary_report.py {year}",
-            "  Generating report"
-        )
-        if not success:
-            failed_steps.append((f"{year} summary report", "etl/generate_summary_report.py"))
-        print()
-
-    # Phase 3: Generate turnover analysis
-    print()
-    print("Phase 3: Generating turnover analysis...")
-    print("-" * 80)
-    success = run_command(
-        "python3 etl/generate_turnover_timeseries.py",
-        "Analyzing equipment turnovers"
-    )
-    if not success:
-        failed_steps.append(("Turnover analysis", "etl/generate_turnover_timeseries.py"))
 
     success = run_command(
-        "python3 etl/generate_machine_uses.py",
-        "Generating machine usage spans"
+        "python3 etl/generate_machine_lifetimes.py",
+        "Generating machine lifetimes"
     )
     if not success:
-        failed_steps.append(("Machine usage spans", "etl/generate_machine_uses.py"))
+        failed_steps.append(("Machine lifetimes", "etl/generate_machine_lifetimes.py"))
+
+    success = run_command(
+        "python3 etl/generate_jurisdictions_time_series.py",
+        "Generating jurisdictions time series"
+    )
+    if not success:
+        failed_steps.append(("Jurisdictions time series", "etl/generate_jurisdictions_time_series.py"))
+
+    success = run_command(
+        "python3 etl/generate_jurisdiction_transitions.py",
+        "Generating jurisdiction transitions"
+    )
+    if not success:
+        failed_steps.append(("Jurisdiction transitions", "etl/generate_jurisdiction_transitions.py"))
+
+    success = run_command(
+        "python3 etl/generate_pollbook_transitions.py",
+        "Generating pollbook transitions"
+    )
+    if not success:
+        failed_steps.append(("Pollbook transitions", "etl/generate_pollbook_transitions.py"))
     print()
 
-    # Phase 4: Generate state-level uniformity data
-    print()
-    print(f"Phase 4: Generating state-level uniformity data for {total_years} years...")
+    # Phase 2: Run analysis scripts
+    print("Phase 2: Running analysis scripts...")
     print("-" * 80)
 
-    for i, year in enumerate(YEARS, 1):
-        print(f"[{i}/{total_years}] {year}")
-        success = run_command(
-            f"python3 etl/condense_to_state_level.py {year}",
-            "  Condensing to state-level"
-        )
-        if not success:
-            failed_steps.append((f"{year} state-level condensing", "etl/condense_to_state_level.py"))
-        print()
-
-    # Phase 5: Run data quality tools
-    print()
-    print("Phase 5: Running data quality tools...")
-    print("-" * 80)
-
-    data_quality_scripts = [
+    analysis_scripts = [
+        # Trends analysis
         ("analysis/trends/duplicate_equipment.py", "Finding duplicate equipment"),
-        ("analysis/trends/unique_condensed_values.py", "Reporting unique condensed values"),
-        ("analysis/trends/anomaly_details.py", "Reporting anomaly details"),
-        ("analysis/trends/machine_uses_analysis.py", "Analyzing machine usage data"),
         ("analysis/trends/jurisdiction_trends.py", "Analyzing jurisdiction trends"),
-        ("analysis/equipment/within_system_patterns.py", "Analyzing within-system turnover patterns"),
-        ("analysis/pollbook/vendor_analysis.py", "Analyzing pollbook vendor patterns"),
-        ("analysis/trends/dre_analysis.py", "Analyzing DRE equipment distribution"),
-        ("analysis/equipment/lifecycle_distribution.py", "Analyzing equipment lifecycle distribution"),
+        ("analysis/trends/machine_lifetimes_analysis.py", "Analyzing machine lifetimes"),
+        ("analysis/trends/jurisdiction_transition_analysis.py", "Generating transition analysis report"),
+
+        # Equipment analysis
         ("analysis/equipment/vendor_turnover.py", "Analyzing vendor turnover patterns"),
         ("analysis/equipment/vendor_market_share.py", "Analyzing vendor market share over time"),
         ("analysis/equipment/vendor_retention.py", "Analyzing voting system vendor retention"),
+
+        # Poll book analysis
         ("analysis/pollbook/adoption_timeseries.py", "Analyzing poll book adoption timeseries"),
         ("analysis/pollbook/by_jurisdiction_size.py", "Analyzing poll book adoption by jurisdiction size"),
-        ("analysis/pollbook/vendor_share.py", "Analyzing poll book vendor market share"),
+        ("analysis/pollbook/vendor_market_share.py", "Analyzing poll book vendor market share"),
         ("analysis/pollbook/vendor_retention.py", "Analyzing poll book vendor retention"),
+        ("analysis/pollbook/vendor_turnover.py", "Analyzing poll book vendor turnover"),
     ]
 
-    for script_path, description in data_quality_scripts:
+    # Note: The following scripts require command-line arguments and are not included:
+    # - analysis/trends/marking_method_sankey.py <start_year> <end_year>
+    # - analysis/trends/state_uniformity.py <year>
+    # - analysis/trends/pollbook_uniformity_trends.py (requires state-level data)
+    # - analysis/equipment/model_survival_analysis.py <model>
+    # - analysis/equipment/model_introduction.py <model>
+
+    for script_path, description in analysis_scripts:
         # Check if script exists
         if not Path(script_path).exists():
             print(f"  {description}... ⊘ SKIPPED (not found)")
@@ -184,12 +159,11 @@ def run_all():
         print(f"✓ Successfully completed all pipeline steps!")
         print()
         print("Generated outputs:")
-        print(f"  - Extracted verifier data for {total_years} years")
-        print(f"  - {total_years} condensed CSV files in data/processed/jurisdictions/")
-        print(f"  - {total_years} summary reports in outputs/reports/")
-        print(f"  - {total_years} state-level uniformity CSV files in data/processed/states/")
-        print(f"  - Turnover analysis: data/processed/voting_system_time_series.csv")
-        print(f"  - Machine usage spans: data/processed/machine_uses.csv")
+        print(f"  - Extracted verifier data for {len(YEARS)} years")
+        print(f"  - Machine lifetimes: data/processed/machine_lifetimes.csv")
+        print(f"  - Jurisdictions time series: data/processed/jurisdictions_time_series.csv")
+        print(f"  - Jurisdiction transitions: data/processed/jurisdiction_transitions.csv")
+        print(f"  - Pollbook transitions: data/processed/pollbook_transitions.csv")
         print(f"  - Analysis reports in outputs/reports/")
         print(f"  - Charts in outputs/figures/")
         return 0

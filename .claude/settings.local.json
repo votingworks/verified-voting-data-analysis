@@ -36,7 +36,12 @@
       "Bash(else echo \"no alerts\")",
       "Bash(fi)",
       "Bash(PYTHONPATH=/Users/drew/code/pb-data python3:*)",
-      "Bash(do)"
+      "Bash(do)",
+      "Bash(comm -23:*)",
+      "Bash(do echo -n \"$year ND: \" grep '\"\"North Dakota\"\"' data/extracted/$year_verifier-jurisdictions.csv)",
+      "Bash(do echo -n \"$year UT: \" grep '\"\"Utah\"\"' data/extracted/$year_verifier-jurisdictions.csv)",
+      "Bash(do tail -n +3 data/processed/jurisdictions/$year_verifier-jurisdictions-condensed.csv)",
+      "Bash(pip3 list:*)"
     ],
     "deny": [],
     "ask": []

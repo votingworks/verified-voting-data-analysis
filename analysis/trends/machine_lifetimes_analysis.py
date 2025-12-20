@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Analyze machine_uses.csv to understand equipment usage patterns.
+Analyze machine_lifetimes.csv to understand equipment usage patterns.
 
 Generates a report showing all unique (Manufacturer, Model) combinations
 grouped by Equipment Type, with usage counts.
 
-Output: outputs/reports/machine_uses_analysis.txt
+Output: outputs/reports/machine_lifetimes_analysis.txt
 """
 
 import csv
@@ -19,12 +19,12 @@ DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
 OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'reports'
 
 
-def load_machine_uses():
-    """Load machine_uses.csv data."""
-    filepath = DATA_DIR / 'machine_uses.csv'
+def load_machine_lifetimes():
+    """Load machine_lifetimes.csv data."""
+    filepath = DATA_DIR / 'machine_lifetimes.csv'
 
     if not filepath.exists():
-        raise FileNotFoundError(f"Machine uses file not found: {filepath}")
+        raise FileNotFoundError(f"Machine lifetimes file not found: {filepath}")
 
     records = []
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -77,7 +77,7 @@ def generate_report(records, output_path):
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write("=" * 100 + "\n")
-        f.write("MACHINE USES DATA ANALYSIS\n")
+        f.write("MACHINE LIFETIMES DATA ANALYSIS\n")
         f.write("=" * 100 + "\n\n")
 
         f.write(f"Total records: {len(records):,}\n")
@@ -112,18 +112,18 @@ def generate_report(records, output_path):
 def main():
     """Main execution function."""
     print("=" * 80)
-    print("ANALYZING MACHINE USES DATA")
+    print("ANALYZING MACHINE LIFETIMES DATA")
     print("=" * 80)
     print()
 
     # Load data
-    print("Loading machine_uses.csv...")
-    records = load_machine_uses()
+    print("Loading machine_lifetimes.csv...")
+    records = load_machine_lifetimes()
     print(f"✓ Loaded {len(records):,} records")
     print()
 
     # Generate report
-    output_path = OUTPUT_DIR / 'machine_uses_analysis.txt'
+    output_path = OUTPUT_DIR / 'machine_lifetimes_analysis.txt'
     print("Generating report...")
     generate_report(records, output_path)
     print(f"✓ Report written to {output_path}")

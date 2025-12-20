@@ -4,6 +4,9 @@ Analyze trends in Election Day Marking Methods and Tabulation across all years (
 
 Creates 100% stacked bar charts showing how the proportions of different
 marking methods and tabulation methods change over time.
+
+Uses jurisdictions_time_series.csv as the data source, which includes
+pre-computed Primary_Marking_Method and Accessible_Marking_Method fields.
 """
 
 import csv
@@ -16,55 +19,70 @@ import numpy as np
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'trends'
+TIME_SERIES_PATH = PROJECT_ROOT / 'data' / 'processed' / 'jurisdictions_time_series.csv'
 
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
+
+# Cache for time series data
+_time_series_cache = None
+
+
+def load_time_series():
+    """
+    Load jurisdictions_time_series.csv (cached).
+
+    Returns:
+        list: List of row dicts from the CSV
+    """
+    global _time_series_cache
+    if _time_series_cache is not None:
+        return _time_series_cache
+
+    print("Loading jurisdictions_time_series.csv...")
+    with open(TIME_SERIES_PATH, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        _time_series_cache = list(reader)
+
+    print(f"  Loaded {len(_time_series_cache):,} rows")
+    return _time_series_cache
 
 
 def load_field_by_year(field_name):
     """
     Load a specific field with registered voter counts for all jurisdictions across all years.
 
+    Uses jurisdictions_time_series.csv as the data source.
+
     Args:
-        field_name: Name of the field to load (e.g., 'Election Day Marking Method')
+        field_name: Name of the field to load (e.g., 'Primary_Marking_Method')
 
     Returns:
         dict: {year: [(value, voters), (value, voters), ...]}
     """
-    field_by_year = {}
+    rows = load_time_series()
+    field_by_year = defaultdict(list)
 
+    for row in rows:
+        year = int(row['Year'])
+        value = row.get(field_name, '').strip()
+        voters_str = row.get('Registered_Voters', '0').strip()
+
+        # Parse voters (handle empty/non-numeric)
+        try:
+            voters = int(voters_str.replace(',', '')) if voters_str else 0
+        except ValueError:
+            voters = 0
+
+        if value:  # Only include rows with valid field value
+            field_by_year[year].append((value, voters))
+
+    # Print summary
     for year in YEARS:
-        filepath = SCRIPT_DIR.parent.parent / 'data' / 'processed' / 'jurisdictions' / f'{year}_verifier-jurisdictions-condensed.csv'
-
-        if not filepath.exists():
-            print(f"Warning: {filepath} not found, skipping...")
-            continue
-
-        data = []
-
-        with open(filepath, 'r', encoding='utf-8-sig') as f:
-            # Skip title row
-            lines = f.readlines()
-            reader = csv.DictReader(lines[1:])
-
-            for row in reader:
-                value = row.get(field_name, '').strip()
-                voters_str = row.get('Registered Voters', '0').strip()
-
-                # Parse voters (handle empty/non-numeric)
-                # Note: No commas in CSV, voters are already numeric
-                try:
-                    voters = int(voters_str) if voters_str else 0
-                except ValueError:
-                    voters = 0
-
-                if value:  # Only include rows with valid field value
-                    data.append((value, voters))
-
-        field_by_year[year] = data
+        data = field_by_year.get(year, [])
         unique_values = len(set(value for value, _ in data))
         print(f"✓ {year}: {len(data):,} jurisdictions, {unique_values} unique values")
 
-    return field_by_year
+    return dict(field_by_year)
 
 
 def calculate_percentages(field_data_by_year, by='jurisdiction'):
@@ -321,6 +339,10 @@ def print_summary_table(field_by_year, field_name):
     print()
 
 
+# NOTE: simplify_marking_method() and calculate_percentages_simplified() removed.
+# Primary_Marking_Method is now pre-computed in jurisdictions_time_series.csv.
+
+
 def analyze_field(field_name, field_display_name, output_prefix, group_pattern=None, custom_colors=None):
     """
     Analyze a single field with both weighting methods (jurisdiction count and registered voters).
@@ -367,48 +389,152 @@ def analyze_field(field_name, field_display_name, output_prefix, group_pattern=N
     )
 
 
+# NOTE: extract_accessible_method() and calculate_percentages_accessible() removed.
+# Accessible_Marking_Method is now pre-computed in jurisdictions_time_series.csv.
+
+
+def analyze_accessible_marking_method():
+    """
+    Generate charts showing accessible marking methods for HMPB systems only.
+
+    Uses pre-computed Accessible_Marking_Method from jurisdictions_time_series.csv.
+    Only includes rows where the field is non-empty (i.e., HMPB systems).
+    """
+    print("\n" + "=" * 80)
+    print("ANALYZING: ACCESSIBLE MARKING METHOD (HMPB SYSTEMS)")
+    print("=" * 80)
+    print()
+
+    # Load pre-computed Accessible_Marking_Method from time series
+    # load_field_by_year only includes rows with non-empty values,
+    # so non-HMPB systems (which have empty Accessible_Marking_Method) are filtered out
+    print("Loading Accessible_Marking_Method data...")
+    field_data = load_field_by_year('Accessible_Marking_Method')
+    print(f"\n✓ Loaded data for {len(field_data)} years")
+
+    # Custom colors for accessible methods - distinct from primary chart
+    # Use same colors as simplified chart for matching categories
+    accessible_colors = {
+        'BMD': '#2E8B57',  # Sea green (matches Primary Marking Method)
+        'DRE with VVPAT': '#DAA520',  # Goldenrod (matches simplified)
+        'DRE without VVPAT': '#CD5C5C',  # Indian red (matches simplified)
+        'None': '#778899',  # Light slate gray
+        'Mixed': '#5F9EA0',  # Cadet blue
+    }
+
+    # Generate jurisdiction-weighted chart
+    print("\n  Generating accessible method chart by jurisdiction count...")
+    pct_jurisdiction = calculate_percentages(field_data, by='jurisdiction')
+    create_stacked_bar_chart(
+        pct_jurisdiction,
+        OUTPUT_DIR / 'accessible_marking_method_jurisdiction_trends.png',
+        'Accessible Marking Method Trends - HMPB Systems (2006-2026)',
+        subtitle='By Jurisdiction Count',
+        custom_colors=accessible_colors
+    )
+
+    # Generate voter-weighted chart
+    print("  Generating accessible method chart weighted by registered voters...")
+    pct_voters = calculate_percentages(field_data, by='voters')
+    create_stacked_bar_chart(
+        pct_voters,
+        OUTPUT_DIR / 'accessible_marking_method_voters_trends.png',
+        'Accessible Marking Method Trends - HMPB Systems (2006-2026)',
+        subtitle='Weighted by Registered Voters',
+        custom_colors=accessible_colors
+    )
+
+
+def analyze_simplified_marking_method():
+    """
+    Generate simplified marking method charts using pre-computed Primary_Marking_Method.
+
+    Uses 6 categories from jurisdictions_time_series.csv:
+    - Hand Marked Paper Ballots (all variants)
+    - Punch Cards
+    - BMD
+    - DRE with VVPAT
+    - DRE without VVPAT
+    - Mechanical Lever Machine
+    """
+    print("\n" + "=" * 80)
+    print("ANALYZING: PRIMARY MARKING METHOD")
+    print("=" * 80)
+    print()
+
+    # Load pre-computed Primary_Marking_Method from time series
+    print("Loading Primary_Marking_Method data...")
+    field_data = load_field_by_year('Primary_Marking_Method')
+    print(f"\n✓ Loaded data for {len(field_data)} years")
+
+    # Custom colors for simplified categories - varied palette
+    simplified_colors = {
+        'Hand Marked Paper Ballots': '#4682B4',  # Steel blue
+        'Punch Cards': '#9370DB',  # Medium purple
+        'BMD': '#2E8B57',  # Sea green
+        'DRE with VVPAT': '#DAA520',  # Goldenrod
+        'DRE without VVPAT': '#CD5C5C',  # Indian red
+        'Mechanical Lever Machine': '#708090',  # Slate gray
+    }
+
+    # Generate jurisdiction-weighted chart
+    print("\n  Generating chart by jurisdiction count...")
+    pct_jurisdiction = calculate_percentages(field_data, by='jurisdiction')
+    create_stacked_bar_chart(
+        pct_jurisdiction,
+        OUTPUT_DIR / 'primary_marking_method_jurisdiction_trends.png',
+        'Primary Marking Method Trends (2006-2026)',
+        subtitle='By Jurisdiction Count',
+        group_pattern='Hand Marked',
+        custom_colors=simplified_colors
+    )
+
+    # Generate voter-weighted chart
+    print("  Generating chart weighted by registered voters...")
+    pct_voters = calculate_percentages(field_data, by='voters')
+    create_stacked_bar_chart(
+        pct_voters,
+        OUTPUT_DIR / 'primary_marking_method_voters_trends.png',
+        'Primary Marking Method Trends (2006-2026)',
+        subtitle='Weighted by Registered Voters',
+        group_pattern='Hand Marked',
+        custom_colors=simplified_colors
+    )
+
+
 def main():
     """Main processing pipeline."""
 
     print("=" * 80)
-    print("ELECTION DAY TRENDS ANALYSIS - EXPANDED")
-    print("Analyzing 4 fields with 2 weighting methods each (8 charts total)")
+    print("ELECTION DAY TRENDS ANALYSIS")
     print("=" * 80)
 
-    # Define custom colors for marking method to highlight problematic systems
-    marking_method_colors = {
-        'Mechanical Lever Machine': '#d62728',  # Red - legacy system
-        'DREs without VVPAT for all voters': '#ff7f0e',  # Orange - no paper trail
-        'DREs with VVPAT for all voters': '#ffd700',  # Yellow - has paper trail
-        'Hand marked paper ballots and DREs without VVPAT': '#ff9966',  # Light orange
-        'Hand marked paper ballots; Direct recording assistive interface without VVPAT for accessibility': '#ffcc99',  # Lighter orange
-        'Ballot Marking Devices for all voters': '#2E8B57',  # Sea green - BMD only jurisdictions
-    }
+    # Analyze fields (using time series field names with underscores)
+    analyze_field('Voting_Location', 'Voting Location', str(OUTPUT_DIR / 'voting_location'))
+    analyze_field('All_Mail_Ballot', 'All Mail Ballot Status', str(OUTPUT_DIR / 'all_mail_ballot'))
 
-    # Analyze all 4 fields
-    analyze_field('Election Day Marking Method', 'Election Day Marking Method',
-                 str(SCRIPT_DIR / 'marking_method'), group_pattern='Hand marked',
-                 custom_colors=marking_method_colors)
-    analyze_field('Election Day Tabulation', 'Election Day Tabulation', str(SCRIPT_DIR / 'tabulation_method'))
-    analyze_field('Voting Location', 'Voting Location', str(SCRIPT_DIR / 'voting_location'))
-    analyze_field('All Mail Ballot?', 'All Mail Ballot Status', str(SCRIPT_DIR / 'all_mail_ballot'))
+    # Generate simplified marking method charts
+    analyze_simplified_marking_method()
+
+    # Generate accessible marking method charts (HMPB systems only)
+    analyze_accessible_marking_method()
 
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE")
     print("=" * 80)
-    print(f"\nGenerated 8 chart files:")
-    print(f"\nElection Day Marking Method:")
-    print(f"  - marking_method_jurisdiction_trends.png")
-    print(f"  - marking_method_voters_trends.png")
-    print(f"\nElection Day Tabulation:")
-    print(f"  - tabulation_method_jurisdiction_trends.png")
-    print(f"  - tabulation_method_voters_trends.png")
+    print(f"\nGenerated chart files:")
     print(f"\nVoting Location:")
     print(f"  - voting_location_jurisdiction_trends.png")
     print(f"  - voting_location_voters_trends.png")
     print(f"\nAll Mail Ballot Status:")
     print(f"  - all_mail_ballot_jurisdiction_trends.png")
     print(f"  - all_mail_ballot_voters_trends.png")
+    print(f"\nPrimary Marking Method (simplified):")
+    print(f"  - primary_marking_method_jurisdiction_trends.png")
+    print(f"  - primary_marking_method_voters_trends.png")
+    print(f"\nAccessible Marking Method (HMPB systems):")
+    print(f"  - accessible_marking_method_jurisdiction_trends.png")
+    print(f"  - accessible_marking_method_voters_trends.png")
     print()
 
 

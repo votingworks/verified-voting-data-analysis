@@ -171,15 +171,8 @@ To generate all data, analysis, and images:
 python3 run_all.py
 ``` 
 
-## Known Data Issues
-- Oregon is not "All Mail" for a year
-- Georgia toggled between TSX and TS and back
+## Notable Data Issues
+- 2018 has a bunch of all mail jurisdictions marked as not "All Mail"
+- TSX and TS is muddy, OS and OSX is muddy
+- Gaps in machine data years, but that may be correctly reflecting inconsistent usage
 
-Inconsistent Machine Identification
-- Diebold appears as both "Diebold" and "Premier (Diebold)"
-- "InkaVote Plus" and "InkaVote Plus PBC" both appear
-- Plain "ImageCast" appears as a BMD
-- "OpenElect OVI" and "OpenElection OVI-VC" both appear
-- "AccuVote OS Central" and "Premier Central Scan" both appear
-- "DS200" labelled as a batch scanner in a couple places. Same for Model 115 and Model 315?
-- 

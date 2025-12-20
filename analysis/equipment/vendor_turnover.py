@@ -642,9 +642,9 @@ def create_vendor_retention_timeline(df, output_path):
 
     for vendor in vendors:
         rates = retention_data[vendor]
-        # Filter out None values for plotting
-        valid_years = [y for y, r in zip(years, rates) if r is not None]
-        valid_rates = [r for r in rates if r is not None]
+        # Filter out None and 0 values for plotting
+        valid_years = [y for y, r in zip(years, rates) if r is not None and r > 0]
+        valid_rates = [r for r in rates if r is not None and r > 0]
 
         if valid_years:
             ax.plot(valid_years, valid_rates,

@@ -516,6 +516,10 @@ def create_vendor_switching_matrix(df):
     """
     Create vendor switching matrix heatmap weighted by registered voters.
 
+    Includes both vendor changes AND system changes (same vendor, different system).
+    This shows retention probability: when a jurisdiction changes systems,
+    what percentage stay with the same vendor vs switch to a competitor.
+
     Args:
         df: DataFrame with From/To vendor and Registered_Voters columns
 
@@ -524,8 +528,10 @@ def create_vendor_switching_matrix(df):
     """
     df_filtered = df.copy()
 
-    # Filter to vendor transitions only (where vendor actually changed)
-    df_filtered = df_filtered[df_filtered['Transition_Type'] == 'vendor']
+    # Include both vendor AND system transitions
+    # System transitions = same vendor, different system (counts as retention)
+    # Vendor transitions = different vendor (counts as switching)
+    df_filtered = df_filtered[df_filtered['Transition_Type'].isin(['vendor', 'system'])]
 
     # Categorize vendors
     df_filtered['From_Cat'] = df_filtered['From_Primary_Voting_Vendor'].apply(categorize_vendor)
@@ -562,8 +568,8 @@ def create_vendor_switching_matrix(df):
 
     ax.set_xlabel('Vendor TO', fontsize=14, fontweight='bold')
     ax.set_ylabel('Vendor FROM', fontsize=14, fontweight='bold')
-    ax.set_title('Vendor Switching Matrix (2006-2026)\n'
-                 'Transition Probabilities Weighted by Registered Voters',
+    ax.set_title('Vendor Retention/Switching Matrix (2006-2026)\n'
+                 'When Changing Systems: % Staying vs Switching Vendors',
                  fontsize=16, fontweight='bold', pad=20)
 
     plt.tight_layout()

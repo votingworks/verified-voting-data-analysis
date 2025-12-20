@@ -23,8 +23,8 @@ OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'pollbook'
 # Years to analyze
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
 
-# Major vendors to track
-VENDORS = ['Paper', 'In-House', 'KNOWiNK', 'ES&S', 'Tenex', 'Other']
+# Major vendors to track (Tenex grouped with Other)
+VENDORS = ['Paper', 'In-House', 'KNOWiNK', 'ES&S', 'Other']
 
 # Colors
 COLORS = {
@@ -46,8 +46,7 @@ def categorize_vendor(status):
         return 'KNOWiNK'
     if status == 'ES&S':
         return 'ES&S'
-    if status == 'Tenex':
-        return 'Tenex'
+    # Tenex and all others grouped together
     return 'Other'
 
 
@@ -133,7 +132,10 @@ def create_volume_chart(transitions_df, output_path):
 
 def create_switching_matrix(transitions_df, output_path):
     """
-    Create vendor switching matrix heatmap.
+    Create vendor switching matrix heatmap showing retention/switching percentages.
+
+    Shows when a jurisdiction changes poll books, what percentage stay with
+    the same vendor vs switch to a competitor.
 
     Args:
         transitions_df: DataFrame of transitions
@@ -144,55 +146,60 @@ def create_switching_matrix(transitions_df, output_path):
     transitions_df['From_Category'] = transitions_df['From_Poll_Book_Status'].apply(categorize_vendor)
     transitions_df['To_Category'] = transitions_df['To_Poll_Book_Status'].apply(categorize_vendor)
 
-    # Filter to valid categories
+    # Filter to valid categories (exclude Paper as "from" - those are adoptions, not switches)
+    # Include vendor_change transitions only (these are moments they could switch vendors)
     transitions_df = transitions_df[
         transitions_df['From_Category'].notna() &
-        transitions_df['To_Category'].notna()
+        transitions_df['To_Category'].notna() &
+        (transitions_df['From_Category'] != 'Paper') &
+        (transitions_df['Transition_Type'] == 'vendor_change')
     ]
 
-    # Create pivot table
-    matrix = pd.crosstab(
-        transitions_df['From_Category'],
-        transitions_df['To_Category'],
-        margins=True
-    )
+    # Build transition count matrix
+    vendors = [v for v in VENDORS if v != 'Paper']  # Exclude Paper from matrix
+    count_matrix = pd.DataFrame(0, index=vendors, columns=vendors)
 
-    # Reorder to match VENDORS list
-    vendors_in_data = [v for v in VENDORS if v in matrix.index]
-    matrix = matrix.reindex(index=vendors_in_data + ['All'], columns=vendors_in_data + ['All'], fill_value=0)
+    for _, row in transitions_df.iterrows():
+        from_cat = row['From_Category']
+        to_cat = row['To_Category']
+        if from_cat in vendors and to_cat in vendors:
+            count_matrix.loc[from_cat, to_cat] += 1
 
-    # Create heatmap (without totals for visual)
-    matrix_display = matrix.drop('All', axis=0).drop('All', axis=1)
+    # Calculate row-wise percentages
+    row_totals = count_matrix.sum(axis=1)
+    pct_matrix = count_matrix.div(row_totals, axis=0) * 100
+    pct_matrix = pct_matrix.fillna(0)
 
     fig, ax = plt.subplots(figsize=(10, 8))
 
     # Create heatmap
-    im = ax.imshow(matrix_display.values, cmap='Blues', aspect='auto')
+    im = ax.imshow(pct_matrix.values, cmap='Greens', aspect='auto', vmin=0, vmax=100)
 
     # Add labels
-    ax.set_xticks(range(len(matrix_display.columns)))
-    ax.set_yticks(range(len(matrix_display.index)))
-    ax.set_xticklabels(matrix_display.columns, rotation=45, ha='right')
-    ax.set_yticklabels(matrix_display.index)
+    ax.set_xticks(range(len(pct_matrix.columns)))
+    ax.set_yticks(range(len(pct_matrix.index)))
+    ax.set_xticklabels(pct_matrix.columns, rotation=45, ha='right')
+    ax.set_yticklabels(pct_matrix.index)
 
     ax.set_xlabel('To Vendor', fontsize=13, fontweight='bold')
     ax.set_ylabel('From Vendor', fontsize=13, fontweight='bold')
-    ax.set_title('Poll Book Vendor Switching Matrix (2006-2026)\n'
-                 'Number of Jurisdictions Switching Between Vendors',
+    ax.set_title('Poll Book Vendor Retention/Switching Matrix (2006-2026)\n'
+                 'When Changing Poll Books: % Staying vs Switching Vendors',
                  fontsize=15, fontweight='bold', pad=20)
 
-    # Add text annotations
-    for i in range(len(matrix_display.index)):
-        for j in range(len(matrix_display.columns)):
-            value = matrix_display.iloc[i, j]
-            if value > 0:
-                color = 'white' if value > matrix_display.values.max() * 0.5 else 'black'
-                ax.text(j, i, f'{value:,}', ha='center', va='center',
-                       fontsize=10, color=color, fontweight='bold')
+    # Add text annotations with percentages
+    for i in range(len(pct_matrix.index)):
+        for j in range(len(pct_matrix.columns)):
+            value = pct_matrix.iloc[i, j]
+            count = count_matrix.iloc[i, j]
+            if row_totals.iloc[i] > 0:  # Only show if there are transitions from this vendor
+                color = 'white' if value > 50 else 'black'
+                ax.text(j, i, f'{value:.0f}%', ha='center', va='center',
+                       fontsize=11, color=color, fontweight='bold')
 
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-    cbar.set_label('Number of Transitions', fontsize=11)
+    cbar.set_label('Transition Probability (%)', fontsize=11)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')

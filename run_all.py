@@ -14,11 +14,26 @@ Excludes: pollbook scripts (data fetching scripts only run on saved data)
 This helps catch breaking changes when modifying upstream components.
 """
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
 
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
+
+# Notable models for model-specific analysis
+NOTABLE_MODELS = [
+    'ExpressVote',
+    'AutoMark',
+    'Poll Pad',
+    'ExpressPoll',
+    'AccuVote TS',
+    'AVC Edge',
+    'DS200',
+    'AccuVote OS',
+    'Model 100',
+    'ImageCast Precinct',
+]
 
 
 def run_command(command, description, show_output=False):
@@ -43,66 +58,70 @@ def run_command(command, description, show_output=False):
         return False
 
 
-def run_all():
+def run_all(analysis_only=False):
     """Run the complete data processing pipeline."""
     print("=" * 80)
-    print("RUNNING COMPLETE DATA PROCESSING PIPELINE")
+    if analysis_only:
+        print("RUNNING ANALYSIS SCRIPTS ONLY")
+    else:
+        print("RUNNING COMPLETE DATA PROCESSING PIPELINE")
     print("=" * 80)
     print()
 
     failed_steps = []
 
-    # Phase 0: Extract and process source data
-    print("Phase 0: Extracting and processing source data...")
-    print("-" * 80)
+    if not analysis_only:
+        # Phase 0: Extract and process source data
+        print("Phase 0: Extracting and processing source data...")
+        print("-" * 80)
 
-    success = run_command(
-        "python3 etl/extract_zips.py",
-        "Extracting verifier zip files"
-    )
-    if not success:
-        failed_steps.append(("Zip extraction", "etl/extract_zips.py"))
+        success = run_command(
+            "python3 etl/extract_zips.py",
+            "Extracting verifier zip files"
+        )
+        if not success:
+            failed_steps.append(("Zip extraction", "etl/extract_zips.py"))
 
-    success = run_command(
-        "python3 etl/scrape_eac_hava_funding.py",
-        "Processing HAVA funding HTML"
-    )
-    if not success:
-        failed_steps.append(("HAVA funding scrape", "etl/scrape_eac_hava_funding.py"))
-    print()
+        success = run_command(
+            "python3 etl/scrape_eac_hava_funding.py",
+            "Processing HAVA funding HTML"
+        )
+        if not success:
+            failed_steps.append(("HAVA funding scrape", "etl/scrape_eac_hava_funding.py"))
+        print()
 
-    # Phase 1: Generate core data files
-    print("Phase 1: Generating core data files...")
-    print("-" * 80)
+        # Phase 1: Generate core data files
+        print("Phase 1: Generating core data files...")
+        print("-" * 80)
 
-    success = run_command(
-        "python3 etl/generate_machine_lifetimes.py",
-        "Generating machine lifetimes"
-    )
-    if not success:
-        failed_steps.append(("Machine lifetimes", "etl/generate_machine_lifetimes.py"))
+        success = run_command(
+            "python3 etl/generate_machine_lifetimes.py",
+            "Generating machine lifetimes"
+        )
+        if not success:
+            failed_steps.append(("Machine lifetimes", "etl/generate_machine_lifetimes.py"))
 
-    success = run_command(
-        "python3 etl/generate_jurisdictions_time_series.py",
-        "Generating jurisdictions time series"
-    )
-    if not success:
-        failed_steps.append(("Jurisdictions time series", "etl/generate_jurisdictions_time_series.py"))
+        success = run_command(
+            "python3 etl/generate_jurisdictions_time_series.py",
+            "Generating jurisdictions time series"
+        )
+        if not success:
+            failed_steps.append(("Jurisdictions time series", "etl/generate_jurisdictions_time_series.py"))
 
-    success = run_command(
-        "python3 etl/generate_jurisdiction_transitions.py",
-        "Generating jurisdiction transitions"
-    )
-    if not success:
-        failed_steps.append(("Jurisdiction transitions", "etl/generate_jurisdiction_transitions.py"))
+        success = run_command(
+            "python3 etl/generate_jurisdiction_transitions.py",
+            "Generating jurisdiction transitions"
+        )
+        if not success:
+            failed_steps.append(("Jurisdiction transitions", "etl/generate_jurisdiction_transitions.py"))
 
-    success = run_command(
-        "python3 etl/generate_pollbook_transitions.py",
-        "Generating pollbook transitions"
-    )
-    if not success:
-        failed_steps.append(("Pollbook transitions", "etl/generate_pollbook_transitions.py"))
-    print()
+        success = run_command(
+            "python3 etl/generate_pollbook_transitions.py",
+            "Generating pollbook transitions"
+        )
+        if not success:
+            failed_steps.append(("Pollbook transitions", "etl/generate_pollbook_transitions.py"))
+        print()
 
     # Phase 2: Run analysis scripts
     print("Phase 2: Running analysis scripts...")
@@ -130,11 +149,39 @@ def run_all():
         ("analysis/pollbook/vendor_turnover.py", "Analyzing poll book vendor turnover"),
     ]
 
+    # Add model-specific analysis for notable models
+    for model in NOTABLE_MODELS:
+        analysis_scripts.append(
+            (f'analysis/equipment/model_introduction.py "{model}"', f"Model introduction: {model}")
+        )
+
+    # Add model survival analysis - grouped comparisons
+    model_survival_groups = [
+        (['AutoMark', 'ExpressVote'], 'BMDs: AutoMark vs ExpressVote'),
+        (['Poll Pad', 'ExpressPoll'], 'E-Pollbooks: Poll Pad vs ExpressPoll'),
+        (['AccuVote TS', 'AVC Edge'], 'DREs: AccuVote TS vs AVC Edge'),
+        (['DS200', 'AccuVote OS', 'Model 100', 'ImageCast Precinct'], 'Hand-Fed Scanners'),
+    ]
+    for models, description in model_survival_groups:
+        model_args = ' '.join(f'"{m}"' for m in models)
+        analysis_scripts.append(
+            (f'analysis/equipment/model_survival_analysis.py {model_args}', f"Model survival: {description}")
+        )
+
+    # Add equipment type survival analysis (DRE vs Hand-Fed Optical Scanner)
+    analysis_scripts.append(
+        ('analysis/equipment/equipment_type_survival_analysis.py "DRE" "Hand-Fed Optical Scanner"',
+         "Equipment type survival: DRE vs Hand-Fed Optical Scanner")
+    )
+
+    # Add state equipment recency analysis
+    analysis_scripts.append(
+        ("analysis/equipment/state_recency.py", "Analyzing state equipment recency")
+    )
+
     # Note: The following scripts require command-line arguments and are not included:
     # - analysis/trends/state_uniformity.py <year>
     # - analysis/trends/pollbook_uniformity_trends.py (requires state-level data)
-    # - analysis/equipment/model_survival_analysis.py <model>
-    # - analysis/equipment/model_introduction.py <model>
 
     for script_cmd, description in analysis_scripts:
         # Check if script exists (handle commands with arguments)
@@ -179,5 +226,13 @@ def run_all():
 
 
 if __name__ == "__main__":
-    exit_code = run_all()
+    parser = argparse.ArgumentParser(description="Run the data processing pipeline")
+    parser.add_argument(
+        '--analysis-only', '-a',
+        action='store_true',
+        help='Skip ETL scripts and run analysis only (assumes data already exists)'
+    )
+    args = parser.parse_args()
+
+    exit_code = run_all(analysis_only=args.analysis_only)
     sys.exit(exit_code)

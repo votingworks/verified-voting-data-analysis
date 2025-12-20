@@ -5,22 +5,29 @@ Time series analysis of voting equipment adoption (2006-2026).
 Shows the portion of jurisdictions/voters using any voting equipment
 (i.e., not hand count).
 
-Creates three graphs:
+Creates four graphs:
 1. Number of jurisdictions with voting equipment over time
 2. Registered voters in jurisdictions with voting equipment over time
 3. Percentage of voters with voting equipment over time
+4. Hand count transitions (diverging bar chart showing adoption vs abandonment)
 
-Reads from: data/processed/jurisdictions_time_series.csv
+Reads from:
+- data/processed/jurisdictions_time_series.csv
+- data/processed/jurisdiction_transitions.csv
 """
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
 OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'equipment'
+
+# Years to analyze
+YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
 
 
 def load_time_series():
@@ -36,6 +43,99 @@ def has_equipment(voting_class):
     if pd.isna(voting_class) or voting_class == '':
         return None  # Exclude from analysis
     return voting_class != 'Hand Count'
+
+
+def load_transitions():
+    """Load jurisdiction transitions data."""
+    filepath = DATA_DIR / 'jurisdiction_transitions.csv'
+    df = pd.read_csv(filepath)
+    print(f"Loaded {len(df):,} records from jurisdiction_transitions.csv")
+    return df
+
+
+def create_hand_count_transitions_chart(output_path):
+    """
+    Create diverging bar chart showing hand count transitions by year.
+
+    Shows from_hand_count events (adoption) above x-axis and
+    to_hand_count events (abandonment) below x-axis.
+    """
+    print("\nCreating hand count transitions chart...")
+
+    # Load transitions data
+    transitions_df = load_transitions()
+
+    # Filter to hand count transitions only
+    hand_count_df = transitions_df[
+        transitions_df['Transition_Type'].isin(['from_hand_count', 'to_hand_count'])
+    ].copy()
+
+    # Group by year and transition type
+    counts = hand_count_df.groupby(['To_Year', 'Transition_Type']).size().unstack(fill_value=0)
+
+    # Ensure all years are represented (skip 2006 - no transitions to 2006)
+    for year in YEARS[1:]:
+        if year not in counts.index:
+            counts.loc[year] = 0
+    counts = counts.sort_index()
+
+    # Get counts for each type
+    years = counts.index.tolist()
+    from_hand_count = counts.get('from_hand_count', pd.Series(0, index=years)).values
+    to_hand_count = counts.get('to_hand_count', pd.Series(0, index=years)).values
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # Bar width
+    width = 1.5
+
+    # Plot from_hand_count (positive, above x-axis) - green for adoption
+    ax.bar(years, from_hand_count, width, label='Adopted Equipment (from hand count)',
+           color='#27ae60', alpha=0.85)
+
+    # Plot to_hand_count (negative, below x-axis) - red for abandonment
+    ax.bar(years, -to_hand_count, width, label='Returned to Hand Count',
+           color='#e74c3c', alpha=0.85)
+
+    # Add value labels on bars
+    for i, (year, from_val, to_val) in enumerate(zip(years, from_hand_count, to_hand_count)):
+        if from_val > 0:
+            ax.text(year, from_val + 5, str(from_val), ha='center', va='bottom',
+                    fontsize=10, fontweight='bold')
+        if to_val > 0:
+            ax.text(year, -to_val - 5, str(to_val), ha='center', va='top',
+                    fontsize=10, fontweight='bold')
+
+    # Add horizontal line at y=0
+    ax.axhline(y=0, color='black', linewidth=1)
+
+    # Formatting
+    ax.set_xlabel('Year', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Number of Jurisdictions', fontsize=13, fontweight='bold')
+    ax.set_title('Hand Count Transitions by Year (2008-2026)\n'
+                 'Jurisdictions Adopting Equipment (↑) vs Returning to Hand Count (↓)',
+                 fontsize=15, fontweight='bold', pad=20)
+    ax.set_xticks(years)
+    ax.legend(fontsize=11, loc='lower right')
+    ax.grid(axis='y', alpha=0.3, linestyle='--')
+
+    # Set y-axis to be symmetric around 0
+    max_val = max(from_hand_count.max(), to_hand_count.max())
+    ax.set_ylim(-max_val * 1.15, max_val * 1.15)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # Print summary
+    total_from = from_hand_count.sum()
+    total_to = to_hand_count.sum()
+    net = total_from - total_to
+    print(f"  Total adoptions (from hand count): {total_from:,}")
+    print(f"  Total abandonments (to hand count): {total_to:,}")
+    print(f"  Net equipment adoption: {net:+,}")
+    print(f"Chart saved to {output_path}")
 
 
 def main():
@@ -150,6 +250,10 @@ def main():
     plt.savefig(output_path3, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"Chart 3 saved to {output_path3}")
+
+    # Chart 4: Hand count transitions (diverging bar chart)
+    output_path4 = OUTPUT_DIR / 'hand_count_transitions.png'
+    create_hand_count_transitions_chart(output_path4)
 
     # Print summary
     print("\n" + "=" * 60)

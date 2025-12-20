@@ -114,6 +114,7 @@ def run_all():
         ("analysis/trends/jurisdiction_trends.py", "Analyzing jurisdiction trends"),
         ("analysis/trends/machine_lifetimes_analysis.py", "Analyzing machine lifetimes"),
         ("analysis/trends/jurisdiction_transition_analysis.py", "Generating transition analysis report"),
+        ("analysis/trends/marking_method_sankey.py 2010 2026", "Generating marking method sankey diagram"),
 
         # Equipment analysis
         ("analysis/equipment/vendor_turnover.py", "Analyzing vendor turnover patterns"),
@@ -129,20 +130,20 @@ def run_all():
     ]
 
     # Note: The following scripts require command-line arguments and are not included:
-    # - analysis/trends/marking_method_sankey.py <start_year> <end_year>
     # - analysis/trends/state_uniformity.py <year>
     # - analysis/trends/pollbook_uniformity_trends.py (requires state-level data)
     # - analysis/equipment/model_survival_analysis.py <model>
     # - analysis/equipment/model_introduction.py <model>
 
-    for script_path, description in analysis_scripts:
-        # Check if script exists
+    for script_cmd, description in analysis_scripts:
+        # Check if script exists (handle commands with arguments)
+        script_path = script_cmd.split()[0]
         if not Path(script_path).exists():
             print(f"  {description}... ⊘ SKIPPED (not found)")
             continue
 
         success = run_command(
-            f"python3 {script_path}",
+            f"python3 {script_cmd}",
             description
         )
         if not success:

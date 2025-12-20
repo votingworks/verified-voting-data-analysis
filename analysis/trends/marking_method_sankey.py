@@ -6,26 +6,27 @@ Shows how jurisdictions flowed between marking method categories
 (e.g., DREs → BMDs, Hand marked → Hand marked).
 
 Usage:
-    python3 marking_method_transitions.py 2010 2026
-    python3 marking_method_transitions.py 2006 2020
+    python3 marking_method_sankey.py 2010 2026
+    python3 marking_method_sankey.py 2006 2020
 
 Args:
     start_year: First year to compare
     end_year: Second year to compare
 
+Reads from: data/processed/jurisdictions_time_series.csv
 Output: outputs/figures/trends/marking_method_transitions_{start}_{end}.png
 """
 
-import csv
 import sys
 from pathlib import Path
 from collections import Counter
+import pandas as pd
 import plotly.graph_objects as go
 
 # Directories
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
-DATA_DIR = PROJECT_ROOT / 'data' / 'processed' / 'jurisdictions'
+DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
 OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'trends'
 
 # Category colors (matching jurisdiction_trends.py)
@@ -38,60 +39,58 @@ COLORS = {
 
 def categorize_marking_method(value):
     """
-    Map raw marking method to 3 simplified categories.
+    Map Primary_Marking_Method to 3 simplified categories.
 
     Returns None for values that should be excluded (lever machines, etc.)
     """
-    if not value:
+    if pd.isna(value) or not value:
         return None
 
     # Hand marked paper ballots (includes punch cards)
-    if value.startswith('Hand marked paper ballots'):
-        return 'Hand marked paper ballots'
-    if value.startswith('Hand marked punch card ballots'):
+    if value in ('Hand Marked Paper Ballots', 'Punch Cards'):
         return 'Hand marked paper ballots'
 
     # Ballot Marking Devices
-    if value == 'Ballot Marking Devices for all voters':
+    if value == 'BMD':
         return 'Ballot Marking Devices'
 
     # DREs (combine with and without VVPAT)
-    if 'DREs' in value and 'for all voters' in value:
+    if value in ('DRE with VVPAT', 'DRE without VVPAT'):
         return 'DREs'
 
     # Exclude lever machines and other edge cases
     return None
 
 
-def load_jurisdiction_methods(year):
+def load_time_series():
+    """Load the jurisdictions time series data."""
+    filepath = DATA_DIR / 'jurisdictions_time_series.csv'
+    if not filepath.exists():
+        raise FileNotFoundError(f"Data file not found: {filepath}")
+    return pd.read_csv(filepath)
+
+
+def load_jurisdiction_methods(df, year):
     """
-    Load marking method data for a year.
+    Get marking method data for a year from the time series.
+
+    Args:
+        df: Full time series DataFrame
+        year: Year to extract
 
     Returns:
         dict: {fips: category} for valid jurisdictions
     """
-    filepath = DATA_DIR / f'{year}_verifier-jurisdictions-condensed.csv'
-
-    if not filepath.exists():
-        raise FileNotFoundError(f"Data file not found: {filepath}")
+    year_df = df[df['Year'] == year]
 
     methods = {}
+    for _, row in year_df.iterrows():
+        fips = row['FIPS']
+        marking_method = row['Primary_Marking_Method']
 
-    with open(filepath, 'r', encoding='utf-8-sig') as f:
-        # Skip title row
-        lines = f.readlines()
-        reader = csv.DictReader(lines[1:])
-
-        for row in reader:
-            fips = row.get('FIPS code', '').strip()
-            marking_method = row.get('Election Day Marking Method', '').strip()
-
-            if not fips:
-                continue
-
-            category = categorize_marking_method(marking_method)
-            if category:
-                methods[fips] = category
+        category = categorize_marking_method(marking_method)
+        if category:
+            methods[fips] = category
 
     return methods
 
@@ -223,12 +222,16 @@ def main():
     print()
 
     # Load data
-    print(f"Loading {start_year} data...")
-    start_methods = load_jurisdiction_methods(start_year)
+    print("Loading jurisdictions time series...")
+    df = load_time_series()
+    print(f"✓ Loaded {len(df):,} records")
+
+    print(f"Extracting {start_year} marking methods...")
+    start_methods = load_jurisdiction_methods(df, start_year)
     print(f"✓ {len(start_methods):,} jurisdictions with valid marking method")
 
-    print(f"Loading {end_year} data...")
-    end_methods = load_jurisdiction_methods(end_year)
+    print(f"Extracting {end_year} marking methods...")
+    end_methods = load_jurisdiction_methods(df, end_year)
     print(f"✓ {len(end_methods):,} jurisdictions with valid marking method")
     print()
 

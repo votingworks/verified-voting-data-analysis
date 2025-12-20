@@ -2,11 +2,18 @@
 """
 Generate longitudinal machine usage data from year-by-year Verifier machine files.
 
-Consolidates equipment usage across all years (2006-2026) into spans showing
-when each (FIPS, Equipment Type, Manufacturer, Model) combination was in use.
+Consolidates equipment usage across all years (2006-2026) into lifetime records
+showing when each (FIPS, Equipment Type, Model) combination was in use.
+
+For each unique equipment:
+- First_Year: from Reported_First_Year_In_Use if valid, else earliest survey year
+- Last_Year: latest survey year the equipment appeared
+- Years_In_Span: count of survey years with data (allows inferring coverage gaps)
+
+Model names are normalized to handle rebrands (e.g., Optech IV-C -> Optech 400C).
 
 Output:
-- data/processed/machine_uses.csv - Equipment usage spans with first/last year
+- data/processed/machine_uses.csv - Equipment usage lifetime with first/last year
 """
 
 import csv
@@ -19,12 +26,81 @@ YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
 # Manufacturer name normalization
 MANUFACTURER_NORMALIZATION = {
     'Premier (Diebold)': 'Diebold',
+    # State agencies
+    'MI BoE': 'State of Michigan',
+    'SC State Election Commission': 'State of South Carolina',
+    'HI Office of Elections': 'State of Hawaii',
+    'MO SoS': 'State of Missouri',
+    'ND SoS': 'State of North Dakota',
+    'AZ SoS': 'State of Arizona',
+    'NV SoS': 'State of Nevada',
+}
+
+# Model name normalization (for rebrands and data quality fixes)
+MODEL_NORMALIZATION = {
+    'Optech IV-C': 'Optech 400C',
+    'Optech 2': 'Optech Insight',
+    'ImageCast': 'ImageCast Precinct BMD',
+    'AccuVote OSX': 'AccuVote OS',
+    'AccuVote TSX': 'AccuVote TS',
+    # Poll book consolidations
+    'Vote Center Pollbook': 'LEDS Poll Book',
+    'e-Poll Book': 'LEDS Poll Book',
+    'EA Pollbook': 'EA Poll Book',
+    'EA Tablet': 'EA Poll Book',
+}
+
+# Equipment types to exclude (not actual machines)
+EXCLUDED_EQUIPMENT_TYPES = {
+    'Hand Counted Paper Ballots',
+    'Paper Poll Book',
+}
+
+# Combined (manufacturer, model) normalization for context-dependent cases
+# Used for In-House Poll Books where model names are generic
+COMBINED_NORMALIZATION = {
+    # Colorado
+    ('CO SoS', 'Electronic PollBook'): ('State of Colorado', 'CO In-House Poll Book'),
+    ('CO SoS', 'CO Electronic Pollbook'): ('State of Colorado', 'CO In-House Poll Book'),
+    ('CO SoS', 'SCORE'): ('State of Colorado', 'CO In-House Poll Book'),
+    # North Carolina
+    ('NCSBE', 'SOSA'): ('State of North Carolina', 'NC In-House Poll Book'),
+    ('NCSBE', 'OVRD'): ('State of North Carolina', 'NC In-House Poll Book'),
+    # Wisconsin
+    ('WI Election Commission', 'Badger Book'): ('State of Wisconsin', 'Badger Book'),
+    ('State of Wisconsin', 'Badger Book'): ('State of Wisconsin', 'Badger Book'),
+    # Rutherford County TN
+    ('Rutherford County TN', 'Rutherford Voter Registration Database'): ('Rutherford County TN', 'Rutherford County EPB'),
+    ('Rutherford County TN', 'Voter Registration Database'): ('Rutherford County TN', 'Rutherford County EPB'),
+    # Orange County FL
+    ('Orange County FL', 'OCVotes Laptop Solution'): ('Orange County FL', 'OCVotes ePoll Book'),
+    # State SoS entries
+    ('WA SoS', 'VoteWA'): ('State of Washington', 'VoteWA'),
+    ('OR SoS', 'My Vote'): ('State of Oregon', 'My Vote'),
+    ('IA SoS', 'Express Voter'): ('State of Iowa', 'Express Voter'),
 }
 
 
 def normalize_manufacturer(name):
     """Normalize manufacturer name to canonical form."""
     return MANUFACTURER_NORMALIZATION.get(name, name)
+
+
+def normalize_model(name):
+    """Normalize model name to canonical form."""
+    return MODEL_NORMALIZATION.get(name, name)
+
+
+def normalize_manufacturer_model(manufacturer, model):
+    """
+    Normalize manufacturer and model together for context-dependent cases.
+
+    Returns (manufacturer, model) tuple.
+    """
+    key = (manufacturer, model)
+    if key in COMBINED_NORMALIZATION:
+        return COMBINED_NORMALIZATION[key]
+    return (manufacturer, model)
 
 
 def load_machines_for_year(year):
@@ -49,13 +125,24 @@ def load_machines_for_year(year):
         reader = csv.DictReader(lines[1:])
 
         for row in reader:
+            equipment_type = row['Equipment Type']
+            if equipment_type in EXCLUDED_EQUIPMENT_TYPES:
+                continue
+
+            # Apply individual normalizations first
+            manufacturer = normalize_manufacturer(row['Manufacturer'])
+            model = normalize_model(row['Model'])
+
+            # Apply combined normalization for context-dependent cases
+            manufacturer, model = normalize_manufacturer_model(manufacturer, model)
+
             machines.append({
                 'fips': row['FIPS code'],
                 'state': row['State'],
                 'jurisdiction': row['Jurisdiction'],
-                'equipment_type': row['Equipment Type'],
-                'manufacturer': normalize_manufacturer(row['Manufacturer']),
-                'model': row['Model'],
+                'equipment_type': equipment_type,
+                'manufacturer': manufacturer,
+                'model': model,
                 'first_year_in_use': row.get('First Year in Use', '').strip()
             })
 
@@ -66,39 +153,50 @@ def build_equipment_timelines():
     """
     Build timeline of equipment presence across all years.
 
+    Key excludes manufacturer to avoid splitting spans due to rebrands.
+    Manufacturer is stored in entries to use the earliest one in output.
+    Deduplicates by year to handle cases where normalization creates duplicates
+    (e.g., jurisdiction has both AccuVote TS and TSX, which normalize to same model).
+
     Returns:
-        dict: {(fips, type, mfr, model): [(year, first_year_in_use, state, jurisdiction), ...]}
+        dict: {(fips, type, model): [{year, first_year_in_use, state, jurisdiction, manufacturer}, ...]}
     """
-    timelines = defaultdict(list)
+    # Use nested dict to deduplicate by year: {key: {year: entry}}
+    timelines = defaultdict(dict)
 
     for year in YEARS:
         print(f"  Loading {year}...")
         machines = load_machines_for_year(year)
 
         for m in machines:
-            key = (m['fips'], m['equipment_type'], m['manufacturer'], m['model'])
-            timelines[key].append({
-                'year': year,
-                'first_year_in_use': m['first_year_in_use'],
-                'state': m['state'],
-                'jurisdiction': m['jurisdiction']
-            })
+            # Key excludes manufacturer - rebrands shouldn't split spans
+            key = (m['fips'], m['equipment_type'], m['model'])
+            # Only keep first entry for each year (dedup normalized models)
+            if year not in timelines[key]:
+                timelines[key][year] = {
+                    'year': year,
+                    'first_year_in_use': m['first_year_in_use'],
+                    'state': m['state'],
+                    'jurisdiction': m['jurisdiction'],
+                    'manufacturer': m['manufacturer']
+                }
 
-    return timelines
+    # Convert year dicts to lists for span processing
+    return {k: list(v.values()) for k, v in timelines.items()}
 
 
 def parse_first_year_in_use(value):
     """
     Parse First Year in Use field, return int or None.
 
-    Only returns valid positive years (1950-2026 range).
+    Handles negative values (data entry errors) via absolute value.
+    Only returns valid years (1950-2026 range).
     """
     if not value or value == '':
         return None
 
     try:
-        year = int(value)
-        # Only valid positive years
+        year = abs(int(value))  # Handle negative years
         if 1950 <= year <= 2026:
             return year
         return None
@@ -106,50 +204,14 @@ def parse_first_year_in_use(value):
         return None
 
 
-def find_consecutive_spans(entries):
-    """
-    Find consecutive spans of years in timeline entries.
-
-    A gap occurs when expected next survey year is missing.
-    Survey years are every 2 years: 2006, 2008, 2010, etc.
-
-    Args:
-        entries: List of dicts with 'year' key, sorted by year
-
-    Returns:
-        list of lists: [[entry1, entry2, ...], [entry5, entry6, ...], ...]
-    """
-    if not entries:
-        return []
-
-    # Sort by year
-    sorted_entries = sorted(entries, key=lambda x: x['year'])
-
-    spans = []
-    current_span = [sorted_entries[0]]
-
-    for i in range(1, len(sorted_entries)):
-        prev_year = sorted_entries[i-1]['year']
-        curr_year = sorted_entries[i]['year']
-
-        # Expected next survey year is +2
-        if curr_year == prev_year + 2:
-            # Consecutive
-            current_span.append(sorted_entries[i])
-        else:
-            # Gap detected - start new span
-            spans.append(current_span)
-            current_span = [sorted_entries[i]]
-
-    # Don't forget the last span
-    spans.append(current_span)
-
-    return spans
-
-
 def generate_usage_records(timelines):
     """
-    Generate usage records from equipment timelines.
+    Generate one usage record per unique equipment (lifetime tracking).
+
+    For each (fips, equipment_type, model):
+    - First_Year: from Reported_First_Year_In_Use if valid, else earliest survey year
+    - Last_Year: latest survey year the equipment appeared
+    - Years_In_Span: count of survey years with data
 
     Returns:
         list of dicts ready for CSV output
@@ -157,43 +219,39 @@ def generate_usage_records(timelines):
     records = []
 
     for key, entries in timelines.items():
-        fips, equipment_type, manufacturer, model = key
+        fips, equipment_type, model = key
 
-        # Find consecutive spans
-        spans = find_consecutive_spans(entries)
+        # Sort entries by year
+        sorted_entries = sorted(entries, key=lambda x: x['year'])
+        first_entry = sorted_entries[0]
+        last_entry = sorted_entries[-1]
 
-        for span in spans:
-            first_entry = span[0]
-            last_entry = span[-1]
+        # Get metadata from earliest entry
+        state = first_entry['state']
+        jurisdiction = first_entry['jurisdiction']
+        manufacturer = first_entry['manufacturer']
+        reported_first_year = first_entry['first_year_in_use']
 
-            # Get metadata from first entry
-            state = first_entry['state']
-            jurisdiction = first_entry['jurisdiction']
-            reported_first_year = first_entry['first_year_in_use']
+        # Calculate First_Year: use reported if valid, else earliest survey year
+        parsed_reported = parse_first_year_in_use(reported_first_year)
+        if parsed_reported is not None:
+            first_year = parsed_reported
+        else:
+            first_year = first_entry['year']
 
-            # Calculate First_Year
-            span_start_year = first_entry['year']
-            parsed_reported = parse_first_year_in_use(reported_first_year)
-
-            if span_start_year == 2006 and parsed_reported is not None:
-                # Use reported first year if span starts in 2006 and value is valid
-                first_year = parsed_reported
-            else:
-                # Use actual first survey year
-                first_year = span_start_year
-
-            records.append({
-                'FIPS': fips,
-                'State': state,
-                'Jurisdiction': jurisdiction,
-                'Equipment_Type': equipment_type,
-                'Manufacturer': manufacturer,
-                'Model': model,
-                'First_Year': first_year,
-                'Last_Year': last_entry['year'],
-                'Reported_First_Year_In_Use': reported_first_year,
-                'Years_In_Span': len(span)
-            })
+        records.append({
+            'FIPS': fips,
+            'State': state,
+            'Jurisdiction': jurisdiction,
+            'Equipment_Type': equipment_type,
+            'Manufacturer': manufacturer,
+            'Model': model,
+            'First_Year': first_year,
+            'Last_Year': last_entry['year'],
+            'Length_Of_Use': last_entry['year'] - first_year + 2,
+            'Reported_First_Year_In_Use': reported_first_year,
+            'Source_Data_Record_Count': len(sorted_entries)
+        })
 
     return records
 
@@ -215,8 +273,9 @@ def write_output(records, output_path):
         'Model',
         'First_Year',
         'Last_Year',
+        'Length_Of_Use',
         'Reported_First_Year_In_Use',
-        'Years_In_Span'
+        'Source_Data_Record_Count'
     ]
 
     # Ensure output directory exists
@@ -243,21 +302,21 @@ def main():
     print(f"✓ Found {len(timelines):,} unique equipment combinations")
     print()
 
-    # Generate records
+    # Generate records (one per unique equipment)
     print("Generating usage records...")
     records = generate_usage_records(timelines)
-    print(f"✓ Generated {len(records):,} usage span records")
+    print(f"✓ Generated {len(records):,} equipment lifetime records")
     print()
 
     # Calculate some stats
-    single_year_spans = sum(1 for r in records if r['Years_In_Span'] == 1)
-    multi_year_spans = len(records) - single_year_spans
-    spans_starting_2006 = sum(1 for r in records if r['First_Year'] <= 2006)
+    single_year_records = sum(1 for r in records if r['Source_Data_Record_Count'] == 1)
+    multi_year_records = len(records) - single_year_records
+    records_starting_2006 = sum(1 for r in records if r['First_Year'] <= 2006)
 
     print("Statistics:")
-    print(f"  - Single-year spans: {single_year_spans:,}")
-    print(f"  - Multi-year spans: {multi_year_spans:,}")
-    print(f"  - Spans starting 2006 or earlier: {spans_starting_2006:,}")
+    print(f"  - Single-year records: {single_year_records:,}")
+    print(f"  - Multi-year records: {multi_year_records:,}")
+    print(f"  - Records starting 2006 or earlier: {records_starting_2006:,}")
     print()
 
     # Write output

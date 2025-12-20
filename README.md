@@ -162,6 +162,19 @@ Turnover pattern investigation:
 
 **Usage**: Run any script to generate detailed reports and identify data quality issues or interesting patterns.
 
+## Setup
+
+1. Create and activate a virtual environment:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
 ## Usage
 
 To generate all data, analysis, and images:
@@ -169,6 +182,9 @@ To generate all data, analysis, and images:
 ```bash
 # With Verified Voting zip archives in the ./data/downloads directory
 python3 run_all.py
+
+# Or, to run analysis only (skip ETL, assumes data already exists):
+python3 run_all.py --analysis-only
 ``` 
 
 ## Notable Data Issues

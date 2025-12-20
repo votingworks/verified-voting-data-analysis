@@ -1,0 +1,15 @@
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.0.0
+kaleido>=0.2.0
+
+# Statistical analysis
+lifelines>=0.27.0
+
+# Web scraping
+beautifulsoup4>=4.12.0

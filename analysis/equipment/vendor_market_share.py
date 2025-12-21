@@ -22,6 +22,8 @@ MAJOR_VENDORS = {
     'Dominion': 'Dominion',
     'ES&S': 'ES&S',
     'Hart InterCivic': 'Hart',
+    'Unisyn': 'Unisyn',
+    'Clear Ballot': 'Clear Ballot',
 }
 
 
@@ -93,7 +95,7 @@ def create_market_share_chart(market_share_data):
     """
     # Prepare data for stacked area chart
     years = sorted(market_share_data.keys())
-    vendors = ['Dominion', 'ES&S', 'Hart', 'Other']
+    vendors = ['Dominion', 'ES&S', 'Hart', 'Unisyn', 'Clear Ballot', 'Other']
 
     # Calculate percentages for each vendor per year
     data_by_vendor = {vendor: [] for vendor in vendors}
@@ -115,6 +117,8 @@ def create_market_share_chart(market_share_data):
         'Dominion': '#4169E1',    # Royal blue
         'ES&S': '#228B22',        # Forest green
         'Hart': '#9370DB',        # Medium purple
+        'Unisyn': '#FF8C00',      # Dark orange
+        'Clear Ballot': '#DC143C',  # Crimson
         'Other': '#D3D3D3'        # Light gray
     }
 
@@ -189,7 +193,7 @@ def main():
         year_data = market_share_data[year]
         total = sum(year_data.values())
 
-        for vendor in ['Dominion', 'ES&S', 'Hart', 'Other']:
+        for vendor in ['Dominion', 'ES&S', 'Hart', 'Unisyn', 'Clear Ballot', 'Other']:
             voters = year_data.get(vendor, 0)
             pct = (voters / total * 100) if total > 0 else 0
             print(f"  {vendor}: {voters:,} voters ({pct:.1f}%)")
@@ -202,7 +206,7 @@ def main():
 
     # Print trend analysis
     print("Market Share Trends:")
-    for vendor in ['Dominion', 'ES&S', 'Hart', 'Other']:
+    for vendor in ['Dominion', 'ES&S', 'Hart', 'Unisyn', 'Clear Ballot', 'Other']:
         first_pct = data_by_vendor[vendor][0]
         last_pct = data_by_vendor[vendor][-1]
         change = last_pct - first_pct

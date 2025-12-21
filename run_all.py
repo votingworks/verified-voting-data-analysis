@@ -174,6 +174,11 @@ def run_all(analysis_only=False):
          "Equipment type survival: DRE vs Hand-Fed Optical Scanner")
     )
 
+    # Add system-level survival analysis
+    analysis_scripts.append(
+        ("analysis/equipment/system_survival.py", "Analyzing voting system survival")
+    )
+
     # Add state equipment recency analysis
     analysis_scripts.append(
         ("analysis/equipment/state_recency.py", "Analyzing state equipment recency")

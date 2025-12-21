@@ -489,8 +489,7 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, ti
     ax2.set_ylabel('HAVA Funding (Millions $)', fontsize=13, fontweight='bold', color=color_hava)
     ax2.tick_params(axis='y', labelcolor=color_hava)
 
-    ax1.set_title('System Changes vs. HAVA Funding Investment\n'
-                  'Comparing Equipment Transitions with Federal Funding',
+    ax1.set_title('Major Upgrades vs. HAVA Funding Investment',
                   fontsize=15, fontweight='bold', pad=20)
 
     ax1.set_xticks(all_years)
@@ -502,7 +501,7 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, ti
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2,
-               loc='upper left', fontsize=11, framealpha=0.9)
+               loc='upper right', fontsize=11, framealpha=0.9)
 
     plt.tight_layout()
     output_path = OUTPUT_DIR / 'upgrade_and_hava_funding.png'
@@ -568,8 +567,8 @@ def create_vendor_switching_matrix(df):
 
     ax.set_xlabel('Vendor TO', fontsize=14, fontweight='bold')
     ax.set_ylabel('Vendor FROM', fontsize=14, fontweight='bold')
-    ax.set_title('Vendor Retention/Switching Matrix (2006-2026)\n'
-                 'When Changing Systems: % Staying vs Switching Vendors',
+    ax.set_title('Vendor Retention Matrix (2006-2026)\n'
+                 'On Major Upgrade: % Staying vs Switching Vendors',
                  fontsize=16, fontweight='bold', pad=20)
 
     plt.tight_layout()
@@ -654,7 +653,7 @@ def create_vendor_retention_timeline(df, output_path):
     ax.set_xlabel('Year', fontsize=14, fontweight='bold')
     ax.set_ylabel('Retention Rate (%)', fontsize=14, fontweight='bold')
     ax.set_title('Vendor Retention Rate Over Time (2006-2026)\n'
-                 '% of System Changes Where Jurisdiction Stayed with Same Vendor',
+                 '% of Major Upgrades Where Jurisdiction Stayed with Same Vendor',
                  fontsize=16, fontweight='bold', pad=20)
 
     ax.set_ylim(0, 105)

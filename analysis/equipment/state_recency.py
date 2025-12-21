@@ -14,6 +14,7 @@ Reads from: data/processed/jurisdiction_transitions.csv
 """
 
 import csv
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -23,7 +24,8 @@ from collections import defaultdict
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
-FIGURES_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'equipment' / 'state_recency'
+EQUIPMENT_FIGURES_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'equipment'
+FIGURES_DIR = EQUIPMENT_FIGURES_DIR / 'state_recency'
 REPORTS_DIR = PROJECT_ROOT / 'outputs' / 'reports'
 
 # Years to show on charts
@@ -174,6 +176,71 @@ def create_state_chart(state, years_list, output_path):
     plt.close()
 
 
+def create_national_chart(most_recent, output_path):
+    """
+    Create bar chart showing recency distribution for all jurisdictions nationally.
+
+    Args:
+        most_recent: dict from get_most_recent_upgrades
+        output_path: Path to save chart
+    """
+    # Collect all years
+    all_years = [data['year'] for data in most_recent.values()]
+
+    # Count by year
+    year_counts = defaultdict(int)
+    for year in all_years:
+        year_counts[year] += 1
+
+    # Get counts for all standard years
+    counts = [year_counts.get(y, 0) for y in YEARS]
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    # Create bar chart with color gradient (older = red, newer = green)
+    colors = plt.cm.RdYlGn(np.linspace(0.1, 0.9, len(YEARS)))
+    bars = ax.bar(range(len(YEARS)), counts, color=colors,
+                  edgecolor='black', linewidth=0.5)
+
+    # Labels and title
+    ax.set_xlabel('Year of Most Recent System Upgrade', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Number of Jurisdictions', fontsize=13, fontweight='bold')
+
+    n_total = len(all_years)
+    median_year = int(np.median(all_years))
+    mean_year = np.mean(all_years)
+
+    title = "Jurisdictions' Last Major Upgrade Year"
+    subtitle = f'n={n_total:,} jurisdictions | Median: {median_year} | Mean: {mean_year:.1f}'
+    ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=15)
+
+    # X-axis labels
+    ax.set_xticks(range(len(YEARS)))
+    ax.set_xticklabels([str(y) for y in YEARS], rotation=45, ha='right')
+
+    # Grid
+    ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_axisbelow(True)
+
+    # Add value labels on bars
+    max_height = max(counts) if counts else 1
+    for i, count in enumerate(counts):
+        if count > 0:
+            ax.text(i, count + max_height * 0.02, f'{count:,}',
+                    ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+    # Layout
+    plt.tight_layout()
+
+    # Save
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"  National chart saved to {output_path}")
+
+
 def calculate_state_stats(by_state):
     """
     Calculate statistics for each state.
@@ -281,6 +348,12 @@ def main():
     print(f"  Found {len(by_state)} states")
     print()
 
+    # Generate national chart
+    print("Generating national recency chart...")
+    national_path = EQUIPMENT_FIGURES_DIR / 'national_system_recency.png'
+    create_national_chart(most_recent, national_path)
+    print()
+
     # Generate per-state charts
     print("Generating per-state charts...")
     chart_count = 0
@@ -325,5 +398,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import sys
     sys.exit(main())

@@ -9,6 +9,7 @@ Output: outputs/reports/machine_lifetimes_analysis.txt
 """
 
 import csv
+import sys
 from pathlib import Path
 from collections import Counter, defaultdict
 
@@ -146,5 +147,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import sys
     sys.exit(main())

@@ -6,7 +6,7 @@ Data analysis of U.S. voting equipment deployment, turnover patterns, vendor swi
 
 [Verified Voting](https://verifiedvoting.org/) tracks voting equipment - equipment used for marking ballots, tabulating ballots, or checking in voters - across all U.S. jurisdictions. You may explore and export their data geographically via their tool, [The Verifier](https://verifiedvoting.org/verifier/#mode/navigate/map/voteEquip/mapType/ppEquip/year/2026). The raw data used in this project was downloaded directly from The Verifier.
 
-The Verifier is an exceptional tool for exploring the data in specific years, especially if you want to look at specific states or counties. For longitundinal analysis, however, the raw data requires significant cleaning and flattening to be useful. This project performs that cleaning and flattening, then analyzes the resulting data for trends in voting equipment usage.
+The Verifier is an exceptional tool for exploring the data in specific years, especially if you want to look at specific states or counties. For longitudinal analysis, however, the raw data requires significant cleaning and flattening to be useful. This project performs that cleaning and flattening, then analyzes the resulting data for trends in voting equipment usage.
 
 ### Source Data Structure
 
@@ -52,9 +52,9 @@ In `./etl/generate_jurisdictions_time_series.py`, we combine the original jurisd
 
 ### Step 3: Generate Transition Data
 
-We extract the transition points from the jurisdiction time series to identify chages in the voting equipment in `./etl/generate_machine_lifetimes.py`. There are many different types of transitions, which are used to filter later analyses for different types of turnover: to_hand_count, from_hand_count, vendor, system, equipment, vvpat_upgrade, vvpat_downgrade, other, and baseline, which is used to identify the starting point for each jurisdiction.
+We extract the transition points from the jurisdiction time series to identify changes in the voting equipment in `./etl/generate_jurisdiction_transitions.py`. There are many different types of transitions, which are used to filter later analyses for different types of turnover: to_hand_count, from_hand_count, vendor, system, equipment, vvpat_upgrade, vvpat_downgrade, other, and baseline, which is used to identify the starting point for each jurisdiction.
 
-We do an analagous but much simpler process for poll books in `./etl/generate_pollbook_lifetimes.py`.
+We do an analogous but much simpler process for poll books in `./etl/generate_pollbook_transitions.py`.
 
 ## Analysis
 

@@ -339,10 +339,6 @@ def print_summary_table(field_by_year, field_name):
     print()
 
 
-# NOTE: simplify_marking_method() and calculate_percentages_simplified() removed.
-# Primary_Marking_Method is now pre-computed in jurisdictions_time_series.csv.
-
-
 def analyze_field(field_name, field_display_name, output_prefix, group_pattern=None, custom_colors=None):
     """
     Analyze a single field with both weighting methods (jurisdiction count and registered voters).
@@ -387,10 +383,6 @@ def analyze_field(field_name, field_display_name, output_prefix, group_pattern=N
         group_pattern=group_pattern,
         custom_colors=custom_colors
     )
-
-
-# NOTE: extract_accessible_method() and calculate_percentages_accessible() removed.
-# Accessible_Marking_Method is now pre-computed in jurisdictions_time_series.csv.
 
 
 def analyze_accessible_marking_method():

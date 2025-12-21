@@ -23,8 +23,8 @@ OUTPUT_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'pollbook'
 # Years to analyze
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
 
-# Major vendors to track (Tenex grouped with Other)
-VENDORS = ['Paper', 'In-House', 'KNOWiNK', 'ES&S', 'Other']
+# Major vendors to track
+VENDORS = ['Paper', 'KNOWiNK', 'ES&S', 'Tenex', 'Other', 'In-House']
 
 # Colors
 COLORS = {
@@ -46,7 +46,8 @@ def categorize_vendor(status):
         return 'KNOWiNK'
     if status == 'ES&S':
         return 'ES&S'
-    # Tenex and all others grouped together
+    if status == 'Tenex':
+        return 'Tenex'
     return 'Other'
 
 
@@ -183,7 +184,7 @@ def create_switching_matrix(transitions_df, output_path):
 
     ax.set_xlabel('To Vendor', fontsize=13, fontweight='bold')
     ax.set_ylabel('From Vendor', fontsize=13, fontweight='bold')
-    ax.set_title('Poll Book Vendor Retention/Switching Matrix (2006-2026)\n'
+    ax.set_title('Poll Book Vendor Retention Matrix (2006-2026)\n'
                  'When Changing Poll Books: % Staying vs Switching Vendors',
                  fontsize=15, fontweight='bold', pad=20)
 

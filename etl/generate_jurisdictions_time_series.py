@@ -33,9 +33,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
 
-# Small jurisdictions with < 500 voters are classified as Hand Count
-SMALL_JURISDICTION_VOTER_THRESHOLD = 500
-
 # Election Day Marking Method → Voting_Class direct mappings
 MARKING_METHOD_MAP = {
     "Ballot Marking Devices for all voters": "BMD",
@@ -235,15 +232,6 @@ def classify_voting_class(jurisdiction_meta, active_equipment):
     handcount_types = ["Hand Counted Paper Ballots"]
     if has_equipment_type(active_equipment, handcount_types):
         return "Hand Count"
-
-    # Small jurisdiction fallback (< 500 voters → Hand Count)
-    registered_voters_str = jurisdiction_meta.get('Registered Voters', '')
-    try:
-        registered_voters = int(registered_voters_str.replace(',', '')) if registered_voters_str else 0
-        if 0 < registered_voters < SMALL_JURISDICTION_VOTER_THRESHOLD:
-            return "Hand Count"
-    except (ValueError, AttributeError):
-        pass
 
     # HMPB with no scanners → Hand Count
     # If marking method is hand-marked paper ballots but we found no optical scanners,

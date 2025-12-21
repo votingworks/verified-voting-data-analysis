@@ -179,10 +179,6 @@ def run_all(analysis_only=False):
         ("analysis/equipment/state_recency.py", "Analyzing state equipment recency")
     )
 
-    # Note: The following scripts require command-line arguments and are not included:
-    # - analysis/trends/state_uniformity.py <year>
-    # - analysis/trends/pollbook_uniformity_trends.py (requires state-level data)
-
     for script_cmd, description in analysis_scripts:
         # Check if script exists (handle commands with arguments)
         script_path = script_cmd.split()[0]

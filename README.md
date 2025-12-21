@@ -1,166 +1,83 @@
-# Voting Equipment and Poll Book Analysis
+# U.S. National Voting Equipment and Poll Book Analysis
 
-Analysis of U.S. voting equipment deployment, turnover patterns, vendor switching behavior, and poll book adoption across jurisdictions from 2006-2026.
+Data analysis of U.S. voting equipment deployment, turnover patterns, vendor switching behavior, and poll book adoption across jurisdictions from 2006-2026 using data from Verified Voting's equipment database.
 
-## Data Source
+## Source Data
 
-**Primary Data**: Verified Voting - Equipment Verifier Data
+[Verified Voting](https://verifiedvoting.org/) tracks voting equipment - equipment used for marking ballots, tabulating ballots, or checking in voters - across all U.S. jurisdictions. You may explore and export their data geographically via their tool, [The Verifier](https://verifiedvoting.org/verifier/#mode/navigate/map/voteEquip/mapType/ppEquip/year/2026). The raw data used in this project was downloaded directly from The Verifier.
 
-Verified Voting tracks all equipment for marking or tabulating ballots across all U.S. election jurisdictions. Raw verifier data shows which types of voting equipment were used for each jurisdiction for each two year election cycle.
+The Verifier is an exceptional tool for exploring the data in specific years, especially if you want to look at specific states or counties. For longitundinal analysis, however, the raw data requires significant cleaning and flattening to be useful. This project performs that cleaning and flattening, then analyzes the resulting data for trends in voting equipment usage.
 
-**Supplementary Data**:
-- **HAVA Funding**: EAC HAVA funding levels by state and year (2002-Present)
+### Source Data Structure
 
-## Data Time Range
+For each even year (i.e. federal election years), The Verifier provides two key CSV files:
+- **Jurisdiction Data**: `verifier-jurisdictions.csv` - One row per jurisdiction. Contains metadata about the jurisdiction (name, state, FIPS code, number of registered voters, etc.) and high-level voting equipment usage (e.g. "Ballot Marking Device for all", "All Mail", etc.).
+- **Equipment Data**: `verifier-machines.csv` - One row per piece of equipment in use in each jurisdiction. Contains information about each type of equipment in use (model, manufacturer, first year in use, and the context in which it's used).
 
-**Verifier Data**: Even years 2006 to 2026. 2026 data may still change. Where available, "First Year In Use" metadata extends equipment deployment history back to 1952 (lever machines!) but only for a handful of jurisdictions.
+The jurisdictions vary in size based on how each state runs elections. For example, Wisconsin, New Hampshire, and Vermont administrate elections at the municipal level, so each town or city is a jurisdiction. California and Texas, like most states, administrate elections at the county level, so each county is a jurisdiction. For states that manage voting equipment statewide, the jurisdictional data is still at the county level. An exception is Alaska, which is treated as a single jurisdiction. 
 
-**HAVA Funding Data**: Complete data, 2003 to present.
+### Known Data Anomalies
 
-## Methods: Condensing Verified Voting Data
+There are many aspects of the data that are messy, as is typical of a large dataset collected from many different sources about a messy real-world situation. Some notable anomalies include:
+- The "All Mail" tag for jurisdictions is notably incorrect in 2018 for many jurisdictions in Utah, Oregon, and North Dakota.
+- The labels "DREs without VVPAT for all voters" and "DREs with VVPAT for all voters" seem to be inconsistent, and suggest that almost as many jurisdictions downgraded from VVPAT as upgraded to VVPAT over time, which seems unlikely.
+- The "First Year In Use" field is often negative for older equipment.
+- For closely related models (e.g. AccuVote OS vs AccuVote OSX), jurisdictions sometimes report one model and sometimes the other. Even different years for the same jurisdiction may report different models. These are treated as the same model family in this analysis.
+- Some jurisdictions appear to use a machine in one election, not use it in the next, and then use it in the following. This may indicate that a jurisdiction is using equipment inconsistently, or it may be a data error.
 
-### Problem
-Raw EAC verifier data contains **multiple rows per jurisdiction** (one per piece of equipment). This data is noisy in a couple of ways:
-- There are multiple vendors at each point in time. In addition to the voting system vendor, there may be the poll book vendor, separate accessible voting machine vendor, remote ballot marking vendor, and so on.
-- Two jurisdictions might be using the same DRE, but for one, it is just for accessible voting, and for the other, it is the main system.
-- There may be model changes within the same family, e.g. jurisdiction gets a DS850 to use alongside an existing DS450
-- The county may change their deployment model within the same system, e.g. primarily precinct scan to primarily central scan, but all ImageCast
+### Supplementary Data
 
-To analyze jurisdictions as part of a clean time series, we must identify each jurisdiction's **primary voting system**.
+The HAVA funding levels by state and year, from 2002 to present, are scraped from EAC's [Funding by State page](https://www.eac.gov/funding-levels-by-state).
 
-### Identifying Primary Voting Equipment
+## Methods: Condensing The Data
 
-When looking at a jurisdiction's data and list of equipment, the decision tree is roughly as follows:
+The main challenge is to condense the normalized data (one jurisdiction and many machine records) into a single row per jurisdiction, to more easily analyze usage over time. To simplify the question, we ignore a few dimensions of the data:
 
-1. Handle "machine voting for all" jurisdictions
-  a. If tagged as "BMD for all" - BMD is the primary equipment
-  b. If tagged as "DRE for all" - DRE is the primary equipment
-  c. If tagged as "Mechanical Lever Machine" - lever machine is the primary equipment
-  d. If tagged as a punch card system - punch card system is the primary equipment
-2. If tagged as an all mail jurisdiction
-  a. If has batch scanners - the batch scanner is the primary, central scan equipment (but treat all DS450, DS850, DS950 the same)
-  b. If only has hand-fed scanners - the hand-fed scanner is the primary, central scan equipment
-  c. Hand Count
-3. If has hand-fed scanners - the hand-fed scanner is the primary, precinct scan equipment
-4. If has central scanners (but is not all mail) - the central scanners are the primary, central scan equipment
-5. If has "Hand Count" in the data or is smaller than 500 registered voters - the primary equipment is hand count
-6. Tag anything that gets here as an "Anomaly"
+- We only pay attention the primary voting system and voting system vendor. E.g. an AccuVote user that also has a DemLive BMD is just treated as an AccuVote user.
+- We ignore the distinctions between equipment use on election day, vote centers, early voting, and absentee ballot processing, and just try to infer  which equipment matters the most.
+- We treat poll book usage separately from voting equipment usage.
 
-If there are two pieces of equipment for a category (e.g. two BMDs, two batch scanners), use the earliest one.
+All of these are possible future extensions to the analysis.
 
-### Identifying Primary Voting System
+### Step 1: Collapsing Machine Time Series Data
 
-Roll up the primary voting equipment field into a primary voting system field. For example, AccuVote OS and AccuVote OSX are basically the same. Dominion ImageCast precinct scan and central scan are basically the same, with a shift in emphasis.
+The raw Verified Voting machine data represents a time-series. We collapse each jurisdiction-machine-use into a single row in `./etl/generate_machine_lifetimes.py` for two reasons:
 
-### Identifying Primary Vendor
+- Smoothes over data blips where a jurisdiction appears to drop and then re-adopt a machine.
+- Makes it simple to generate distributions of equipment lifetime for each model. 
 
-Vendor name is usually in the equipment name. Extract it based on a list of expected values and shunt others to "Other." Companies that are eventually acquired (e.g. Sequoia) are grouped under their eventual vendor.
+### Step 2: Create Augmented Jurisdiction Time Series
 
-### Poll Book Classification
+In `./etl/generate_jurisdictions_time_series.py`, we combine the original jurisdiction and the collapsed machine data to categorize each jurisdiction's voting system at each point in time. The time series has fields for the primary voting system, primary voting system vendor, primary vendor, and poll book type. 
 
-Poll books are classified as:
-- **Paper**: Traditional paper poll books
-- **Commercial Electronic**: Manufacturer-branded e-poll books (KNOWiNK, Tenex, Robis, etc.)
-- **In-House**: Custom/in-house electronic poll book systems
+### Step 3: Generate Transition Data
 
-Priority logic: Paper > In-House > Commercial (if multiple types present, the highest priority wins)
+We extract the transition points from the jurisdiction time series to identify chages in the voting equipment in `./etl/generate_machine_lifetimes.py`. There are many different types of transitions, which are used to filter later analyses for different types of turnover: to_hand_count, from_hand_count, vendor, system, equipment, vvpat_upgrade, vvpat_downgrade, other, and baseline, which is used to identify the starting point for each jurisdiction.
 
-### Output
+We do an analagous but much simpler process for poll books in `./etl/generate_pollbook_lifetimes.py`.
 
-For each year, condensing produces:
-- **`{YEAR}_verifier-jurisdictions-condensed.csv`**: One row per jurisdiction with primary voting system fields
-- **`{YEAR}_summary_report.md`**: Statistical summary of equipment distribution for the year
+## Analysis
 
-## Methods: Identifying Turnover
+The `analysis/` directory contains scripts that generate charts and reports from the processed data. All outputs go to `outputs/figures/` and `outputs/reports/`.
 
-The turnover analysis (`identify_voting_equipment_turnover.py`) tracks changes across consecutive election cycles (2006→2008, 2008→2010, etc.), with three types of turnover.
+### Equipment Analysis (`analysis/equipment/`)
 
-### 1. Between-System Turnovers
-**Definition**: Jurisdictions that changed their **primary voting system** (vendor switch or major system upgrade).
+- **Adoption trends**: Tracks jurisdictions and voters using voting equipment vs hand count over time
+- **Equipment survival**: Kaplan-Meier survival curves showing how long equipment stays in service before replacement
+- **Model analysis**: When specific models (DS200, AccuVote, ExpressVote, etc.) were introduced and their survival rates
+- **Vendor dynamics**: Market share trends, vendor retention rates, and switching patterns between ES&S, Dominion, Hart, and others
+- **State recency**: Per-state analysis of when jurisdictions last upgraded their equipment
 
-**Examples**:
-- ES&S DS200 → Dominion ImageCast (vendor switch)
-- AccuVote TS (DRE) → ES&S DS200 (optical scan)
-- Hart eSeries → Hart Verity (same vendor, different generation)
+### Poll Book Analysis (`analysis/pollbook/`)
 
-**Output**: `data/between_system_turnovers.csv`
+- **Adoption trends**: Growth of electronic poll books vs paper over time
+- **Size analysis**: How jurisdiction size correlates with electronic poll book adoption
+- **Vendor dynamics**: Market share and retention for poll book vendors (KNOWiNK, ES&S Expoll, Tenex, etc.)
 
-**Key Fields**:
-- `From_Equipment`, `To_Equipment`: Full equipment names
-- `From_Vendor`, `To_Vendor`: Vendor names
-- `From_Family`, `To_Family`: Equipment family classifications
-- `Vendor_Retained`: Boolean indicating if vendor stayed the same
-- `Years_Between`: Time elapsed between changes
+### Trends Analysis (`analysis/trends/`)
 
-### 2. Within-System Turnovers
-**Definition**: Jurisdictions that changed **equipment model** within the **same family**
-
-**Examples**:
-- Precinct vs. Central Scan Switches, e.g. "Precinct Scan - Dominion ImageCast" → "Central Scan - Dominion ImageCast", 40% of changes
-- AccuVote TS Switches, e.g. AccuVote TS → AccuVote TSX, 33% of changes
-- Away from DRE, e.g. "DRE - Hart InterCivic Verity Touch" → "BMD - Hart InterCivic Verity Duo", 8% of changes
-
-**Output**: `data/within_system_turnovers.csv`
-
-**Note**: These represent incremental upgrades or replacements within an existing vendor relationship.
-
-### 3. No-Turnover Jurisdictions
-**Definition**: Jurisdictions that used the **same equipment** across the entire 2006-2026 period
-
-**Output**: `data/no_system_turnovers.csv`
-
-**Note**: These jurisdictions represent equipment that has been in service for 20+ years without replacement.
-
-## Key Equipment Analysis Outputs
-
-### Equipment Lifecycle Analysis (`equipment_analysis/`)
-- **`lifecycle_distribution_all.png`**: Distribution of equipment lifecycle lengths (all turnovers)
-- **`lifecycle_distribution_from_paper.png`**: Lifecycle for HMPB (hand-marked paper ballot) systems
-- **`lifecycle_distribution_from_bmd.png`**: Lifecycle for BMD systems
-- **`lifecycle_distribution_from_dre.png`**: Lifecycle for DRE systems
-
-### Vendor Turnover Analysis (`equipment_analysis/`)
-- **`turnover_volume_by_year.png`**: Total number of turnovers per year
-- **`turnover_percentage_jurisdictions.png`**: Turnover as % of all jurisdictions
-- **`turnover_percentage_voters.png`**: Turnover as % of registered voters
-- **`turnover_and_hava_funding.png`**: Dual-axis chart comparing turnover % with HAVA funding levels
-- **`vendor_switching_matrix.png`**: Heatmap showing vendor retention and switching patterns
-- **`vendor_retention_timeline.png`**: Vendor retention rates over time (2006-2026)
-
-### Jurisdiction Trends (`data_quality_tools/jurisdiction_trends/`)
-- **Marking Method Trends**: Evolution of hand-marked vs machine-marked voting over time
-- **Tabulation Trends**: Precinct vs central tabulation patterns
-- **All-Mail Ballot Trends**: Adoption of all-mail voting
-- **Voting Location Trends**: Vote center vs precinct-based voting
-
-Applicable trends are visualized in two ways:
-1. **By jurisdiction count**: Each jurisdiction counted equally
-2. **Weighted by registered voters**: Larger jurisdictions weighted more heavily
-
-## Data Quality Tools
-
-The `data_quality_tools/` directory contains scripts for exploring and validating the data:
-
-### `/jurisdiction_condensed_values/`
-Tools for analyzing field values in condensed jurisdiction data:
-- **`report_unique_condensed_values.py`**: Lists all unique values for each condensed field
-- **`report_anomaly_details.py`**: Identifies and reports data anomalies across years
-
-### `/jurisdiction_trends/`
-Visualization tools for tracking field values over time:
-- **`analyze_jurisdiction_trends.py`**: Generates stacked bar charts showing how marking methods, tabulation, and voting locations change over time
-
-### `/machines/`
-Machine-level data analysis:
-- **`find_duplicate_equipment.py`**: Identifies duplicate equipment records
-
-### `/turnover/`
-Turnover pattern investigation:
-- **`inspect_no_turnover.py`**: Analyzes jurisdictions with no equipment changes
-- **`inspect_quick_turnover.py`**: Identifies unusually short equipment lifecycles
-- **`analyze_within_system_patterns.py`**: Studies patterns in same-family equipment changes
-
-**Usage**: Run any script to generate detailed reports and identify data quality issues or interesting patterns.
+- **Transition patterns**: Comprehensive analysis of vendor changes, system upgrades, and method transitions
+- **Marking method evolution**: Sankey diagrams showing how jurisdictions moved between hand-marked ballots, BMDs, and DREs
 
 ## Setup
 
@@ -185,10 +102,4 @@ python3 run_all.py
 
 # Or, to run analysis only (skip ETL, assumes data already exists):
 python3 run_all.py --analysis-only
-``` 
-
-## Notable Data Issues
-- 2018 has a bunch of all mail jurisdictions marked as not "All Mail"
-- TSX and TS is muddy, OS and OSX is muddy
-- Gaps in machine data years, but that may be correctly reflecting inconsistent usage
-
+```

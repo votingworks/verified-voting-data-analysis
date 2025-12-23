@@ -21,6 +21,7 @@ import seaborn as sns
 import numpy as np
 from pathlib import Path
 from collections import defaultdict
+from adjustText import adjust_text
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
@@ -403,20 +404,13 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, ti
     # Get turnover data
     turnover_by_year = get_turnover_jurisdictions_by_year(df)
 
-    # Calculate turnover percentages
+    # Get jurisdiction counts (not percentages)
     years_turnover = sorted(turnover_by_year.keys())
-    percentages = []
+    counts = []
 
     for year in years_turnover:
         turnover_count = len(turnover_by_year[year])
-        total_count = total_jurisdictions_by_year.get(year, 0)
-
-        if total_count > 0:
-            pct = (turnover_count / total_count) * 100
-        else:
-            pct = 0
-
-        percentages.append(pct)
+        counts.append(turnover_count)
 
     # Load HAVA funding
     hava_funding = load_hava_funding_by_even_year()
@@ -424,7 +418,7 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, ti
     # Determine full year range
     min_year_hava = min(hava_funding.keys()) if hava_funding else 2008
     min_year_turnover = min(years_turnover) if years_turnover else 2008
-    min_year_deployments = min(initial_deployments['percentages_by_year'].keys()) if initial_deployments['percentages_by_year'] else 2008
+    min_year_deployments = min(initial_deployments['deployments_by_year'].keys()) if initial_deployments['deployments_by_year'] else 2008
     min_year = min(min_year_hava, min_year_turnover, min_year_deployments)
 
     max_year_turnover = max(years_turnover) if years_turnover else 2026
@@ -433,18 +427,18 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, ti
     # Create complete year range (even years only)
     all_years = list(range(min_year, max_year + 1, 2))
 
-    # Prepare aligned data
-    turnover_pcts_aligned = []
+    # Prepare aligned data (counts, not percentages)
+    turnover_counts_aligned = []
     hava_funding_aligned = []
 
     for year in all_years:
         if year in years_turnover:
             idx = years_turnover.index(year)
-            turnover_pcts_aligned.append(percentages[idx])
-        elif year in initial_deployments['percentages_by_year']:
-            turnover_pcts_aligned.append(initial_deployments['percentages_by_year'][year])
+            turnover_counts_aligned.append(counts[idx])
+        elif year in initial_deployments['deployments_by_year']:
+            turnover_counts_aligned.append(initial_deployments['deployments_by_year'][year])
         else:
-            turnover_pcts_aligned.append(0)
+            turnover_counts_aligned.append(0)
 
         funding_dollars = hava_funding.get(year, 0)
         hava_funding_aligned.append(funding_dollars / 1_000_000)
@@ -458,26 +452,26 @@ def create_turnover_and_hava_dual_axis_chart(df, total_jurisdictions_by_year, ti
     years_actual = [y for y in all_years if y >= 2008]
     years_inferred = [y for y in all_years if y < 2008]
 
-    actual_pcts = [turnover_pcts_aligned[all_years.index(y)] for y in years_actual]
-    inferred_pcts = [turnover_pcts_aligned[all_years.index(y)] for y in years_inferred]
+    actual_counts = [turnover_counts_aligned[all_years.index(y)] for y in years_actual]
+    inferred_counts = [turnover_counts_aligned[all_years.index(y)] for y in years_inferred]
 
     # Plot inferred initial deployments (pre-2008)
-    if years_inferred and any(p > 0 for p in inferred_pcts):
-        ax1.bar(years_inferred, inferred_pcts, color=color_turnover,
+    if years_inferred and any(c > 0 for c in inferred_counts):
+        ax1.bar(years_inferred, inferred_counts, color=color_turnover,
                 edgecolor='black', linewidth=0.5, width=1.5, alpha=0.4,
                 hatch='//', label='Initial Deployments (Inferred from 2006)')
 
     # Plot actual turnovers (2008+)
     if years_actual:
-        ax1.bar(years_actual, actual_pcts, color=color_turnover,
+        ax1.bar(years_actual, actual_counts, color=color_turnover,
                 edgecolor='black', linewidth=0.5, width=1.5, alpha=0.8,
-                label='System Changes % (Actual)')
+                label='System Changes (Actual)')
 
     ax1.set_xlabel('Year', fontsize=13, fontweight='bold')
-    ax1.set_ylabel('System Change Percentage of Jurisdictions (%)',
+    ax1.set_ylabel('Number of Jurisdictions with System Changes',
                    fontsize=13, fontweight='bold', color=color_turnover)
     ax1.tick_params(axis='y', labelcolor=color_turnover)
-    ax1.set_ylim(0, max(turnover_pcts_aligned) * 1.15 if turnover_pcts_aligned else 100)
+    ax1.set_ylim(0, max(turnover_counts_aligned) * 1.15 if turnover_counts_aligned else 100)
 
     # Right axis: HAVA funding
     ax2 = ax1.twinx()
@@ -614,6 +608,7 @@ def create_vendor_retention_timeline(df, output_path):
     # Calculate retention rate for each vendor and year
     vendors = ['Dominion', 'ES&S', 'Hart']
     retention_data = {vendor: [] for vendor in vendors}
+    sample_sizes = {vendor: [] for vendor in vendors}
 
     for year in years:
         year_df = df_filtered[df_filtered['To_Year'] == year]
@@ -624,7 +619,11 @@ def create_vendor_retention_timeline(df, output_path):
 
             if len(from_vendor) == 0:
                 retention_data[vendor].append(None)
+                sample_sizes[vendor].append(0)
                 continue
+
+            # Track sample size (number of transitions)
+            sample_sizes[vendor].append(len(from_vendor))
 
             # Calculate voter-weighted retention rate
             total_voters = from_vendor['Registered_Voters'].sum()
@@ -639,29 +638,50 @@ def create_vendor_retention_timeline(df, output_path):
     # Create the chart
     fig, ax = plt.subplots(figsize=(14, 8))
 
+    # Collect all text annotations for adjust_text
+    texts = []
+
     for vendor in vendors:
         rates = retention_data[vendor]
+        sizes = sample_sizes[vendor]
         # Filter out None and 0 values for plotting
-        valid_years = [y for y, r in zip(years, rates) if r is not None and r > 0]
-        valid_rates = [r for r in rates if r is not None and r > 0]
+        valid_data = [(y, r, n) for y, r, n in zip(years, rates, sizes)
+                      if r is not None and r > 0]
 
-        if valid_years:
+        if valid_data:
+            valid_years = [d[0] for d in valid_data]
+            valid_rates = [d[1] for d in valid_data]
+            valid_sizes = [d[2] for d in valid_data]
+
             ax.plot(valid_years, valid_rates,
                     marker='o', markersize=8, linewidth=2.5,
                     color=vendor_colors[vendor], label=vendor)
 
+            # Add sample size labels - collect for adjust_text
+            for y, r, n in zip(valid_years, valid_rates, valid_sizes):
+                txt = ax.text(y, r, f'n={n}', fontsize=7, color=vendor_colors[vendor],
+                              alpha=0.8, ha='center')
+                texts.append(txt)
+
     ax.set_xlabel('Year', fontsize=14, fontweight='bold')
     ax.set_ylabel('Retention Rate (%)', fontsize=14, fontweight='bold')
     ax.set_title('Vendor Retention Rate Over Time (2006-2026)\n'
-                 '% of Major Upgrades Where Jurisdiction Stayed with Same Vendor',
+                 'Weighted by Registered Voters (n = jurisdiction count)',
                  fontsize=16, fontweight='bold', pad=20)
 
     ax.set_ylim(0, 105)
     ax.set_xlim(min(years) - 0.5, max(years) + 0.5)
     ax.set_xticks(years)
 
-    ax.legend(loc='lower right', fontsize=12, framealpha=0.9)
+    ax.legend(loc='upper left', fontsize=12, framealpha=0.9)
     ax.grid(axis='both', alpha=0.3, linestyle='--')
+
+    # Use adjust_text to avoid label overlaps
+    adjust_text(texts, ax=ax,
+                arrowprops=dict(arrowstyle='-', color='gray', alpha=0.6, lw=0.5),
+                expand=(1.2, 1.4),  # Allow more vertical expansion
+                force_text=(0.5, 1.0),  # Stronger vertical force
+                force_static=(0.3, 0.5))
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')

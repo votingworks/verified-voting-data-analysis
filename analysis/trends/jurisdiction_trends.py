@@ -120,7 +120,7 @@ def calculate_percentages(field_data_by_year, by='jurisdiction'):
     return percentages_by_year
 
 
-def create_stacked_bar_chart(percentages_by_year, output_file, title, subtitle="", group_pattern=None, custom_colors=None):
+def create_stacked_bar_chart(percentages_by_year, output_file, title, subtitle="", group_pattern=None, custom_colors=None, custom_order=None):
     """
     Create a 100% stacked bar chart showing field value proportions over time.
 
@@ -131,6 +131,7 @@ def create_stacked_bar_chart(percentages_by_year, output_file, title, subtitle="
         subtitle: optional subtitle (e.g., "By Jurisdiction Count" or "Weighted by Registered Voters")
         group_pattern: optional string pattern to group matching items at bottom (e.g., "Hand marked")
         custom_colors: optional dict mapping value names to specific colors
+        custom_order: optional list specifying exact order of values (bottom to top in stack)
     """
 
     # Get all unique values across all years
@@ -138,54 +139,61 @@ def create_stacked_bar_chart(percentages_by_year, output_file, title, subtitle="
     for year_data in percentages_by_year.values():
         all_values.update(year_data.keys())
 
-    # Sort values for consistent ordering (put common ones first)
-    # Calculate average percentage across all years for sorting
-    value_avg_pct = defaultdict(float)
-    for year_data in percentages_by_year.values():
-        for value, pct in year_data.items():
-            value_avg_pct[value] += pct
-
-    # Sort by average percentage (most common first)
-    if group_pattern:
-        # For marking method, use special multi-tier grouping
-        if group_pattern == 'Hand marked':
-            # Tier 1: Hand marked items (bottom)
-            hand_marked = [v for v in value_avg_pct.keys() if v.startswith('Hand marked')]
-            # Tier 2: BMD items
-            bmd_items = [v for v in value_avg_pct.keys()
-                        if v not in hand_marked and ('BMD' in v or 'Ballot Marking Device' in v)]
-            # Tier 3: DREs with VVPAT (less problematic)
-            dre_with_vvpat = [v for v in value_avg_pct.keys()
-                             if v not in hand_marked and v not in bmd_items and 'DREs with VVPAT' in v]
-            # Tier 4: DREs without VVPAT (more problematic - higher up to stand out)
-            dre_without_vvpat = [v for v in value_avg_pct.keys()
-                                if v not in hand_marked and v not in bmd_items and
-                                v not in dre_with_vvpat and 'DREs without VVPAT' in v]
-            # Tier 5: Everything else (top)
-            other_items = [v for v in value_avg_pct.keys()
-                          if v not in hand_marked and v not in bmd_items and
-                          v not in dre_with_vvpat and v not in dre_without_vvpat]
-
-            # Sort each tier by average percentage
-            hand_marked_sorted = sorted(hand_marked, key=lambda v: value_avg_pct[v], reverse=True)
-            bmd_sorted = sorted(bmd_items, key=lambda v: value_avg_pct[v], reverse=True)
-            dre_vvpat_sorted = sorted(dre_with_vvpat, key=lambda v: value_avg_pct[v], reverse=True)
-            dre_no_vvpat_sorted = sorted(dre_without_vvpat, key=lambda v: value_avg_pct[v], reverse=True)
-            other_sorted = sorted(other_items, key=lambda v: value_avg_pct[v], reverse=True)
-
-            # Stack from bottom to top: hand marked, BMDs, DREs with VVPAT, DREs without VVPAT, others
-            sorted_values = hand_marked_sorted + bmd_sorted + dre_vvpat_sorted + dre_no_vvpat_sorted + other_sorted
-        else:
-            # Standard 2-tier grouping for other fields
-            grouped = [v for v in value_avg_pct.keys() if v.startswith(group_pattern)]
-            ungrouped = [v for v in value_avg_pct.keys() if not v.startswith(group_pattern)]
-
-            grouped_sorted = sorted(grouped, key=lambda v: value_avg_pct[v], reverse=True)
-            ungrouped_sorted = sorted(ungrouped, key=lambda v: value_avg_pct[v], reverse=True)
-
-            sorted_values = grouped_sorted + ungrouped_sorted
+    # Use custom order if provided
+    if custom_order:
+        # Use custom order, filtering to only values that exist in the data
+        sorted_values = [v for v in custom_order if v in all_values]
+        # Add any values not in custom_order at the end
+        for v in all_values:
+            if v not in sorted_values:
+                sorted_values.append(v)
     else:
-        sorted_values = sorted(value_avg_pct.keys(), key=lambda v: value_avg_pct[v], reverse=True)
+        # Calculate average percentage across all years for sorting
+        value_avg_pct = defaultdict(float)
+        for year_data in percentages_by_year.values():
+            for value, pct in year_data.items():
+                value_avg_pct[value] += pct
+
+        if group_pattern:
+            # For marking method, use special multi-tier grouping
+            if group_pattern == 'Hand marked':
+                # Tier 1: Hand marked items (bottom)
+                hand_marked = [v for v in value_avg_pct.keys() if v.startswith('Hand marked')]
+                # Tier 2: BMD items
+                bmd_items = [v for v in value_avg_pct.keys()
+                            if v not in hand_marked and ('BMD' in v or 'Ballot Marking Device' in v)]
+                # Tier 3: DREs with VVPAT (less problematic)
+                dre_with_vvpat = [v for v in value_avg_pct.keys()
+                                 if v not in hand_marked and v not in bmd_items and 'DREs with VVPAT' in v]
+                # Tier 4: DREs without VVPAT (more problematic - higher up to stand out)
+                dre_without_vvpat = [v for v in value_avg_pct.keys()
+                                    if v not in hand_marked and v not in bmd_items and
+                                    v not in dre_with_vvpat and 'DREs without VVPAT' in v]
+                # Tier 5: Everything else (top)
+                other_items = [v for v in value_avg_pct.keys()
+                              if v not in hand_marked and v not in bmd_items and
+                              v not in dre_with_vvpat and v not in dre_without_vvpat]
+
+                # Sort each tier by average percentage
+                hand_marked_sorted = sorted(hand_marked, key=lambda v: value_avg_pct[v], reverse=True)
+                bmd_sorted = sorted(bmd_items, key=lambda v: value_avg_pct[v], reverse=True)
+                dre_vvpat_sorted = sorted(dre_with_vvpat, key=lambda v: value_avg_pct[v], reverse=True)
+                dre_no_vvpat_sorted = sorted(dre_without_vvpat, key=lambda v: value_avg_pct[v], reverse=True)
+                other_sorted = sorted(other_items, key=lambda v: value_avg_pct[v], reverse=True)
+
+                # Stack from bottom to top: hand marked, BMDs, DREs with VVPAT, DREs without VVPAT, others
+                sorted_values = hand_marked_sorted + bmd_sorted + dre_vvpat_sorted + dre_no_vvpat_sorted + other_sorted
+            else:
+                # Standard 2-tier grouping for other fields
+                grouped = [v for v in value_avg_pct.keys() if v.startswith(group_pattern)]
+                ungrouped = [v for v in value_avg_pct.keys() if not v.startswith(group_pattern)]
+
+                grouped_sorted = sorted(grouped, key=lambda v: value_avg_pct[v], reverse=True)
+                ungrouped_sorted = sorted(ungrouped, key=lambda v: value_avg_pct[v], reverse=True)
+
+                sorted_values = grouped_sorted + ungrouped_sorted
+        else:
+            sorted_values = sorted(value_avg_pct.keys(), key=lambda v: value_avg_pct[v], reverse=True)
 
     # Prepare data for stacking
     years = sorted(percentages_by_year.keys())
@@ -470,6 +478,17 @@ def analyze_simplified_marking_method():
         'Mechanical Lever Machine': '#708090',  # Slate gray
     }
 
+    # Explicit ordering for stacked chart (bottom to top)
+    # Visual order top-to-bottom: Lever, Punch Cards, DRE w/o VVPAT, DRE w/ VVPAT, BMD, HMPB
+    simplified_order = [
+        'Hand Marked Paper Ballots',
+        'BMD',
+        'DRE with VVPAT',
+        'DRE without VVPAT',
+        'Punch Cards',
+        'Mechanical Lever Machine',
+    ]
+
     # Generate jurisdiction-weighted chart
     print("\n  Generating chart by jurisdiction count...")
     pct_jurisdiction = calculate_percentages(field_data, by='jurisdiction')
@@ -478,8 +497,8 @@ def analyze_simplified_marking_method():
         OUTPUT_DIR / 'primary_marking_method_jurisdiction_trends.png',
         'Primary Marking Method Trends (2006-2026)',
         subtitle='By Jurisdiction Count',
-        group_pattern='Hand Marked',
-        custom_colors=simplified_colors
+        custom_colors=simplified_colors,
+        custom_order=simplified_order
     )
 
     # Generate voter-weighted chart
@@ -490,8 +509,8 @@ def analyze_simplified_marking_method():
         OUTPUT_DIR / 'primary_marking_method_voters_trends.png',
         'Primary Marking Method Trends (2006-2026)',
         subtitle='Weighted by Registered Voters',
-        group_pattern='Hand Marked',
-        custom_colors=simplified_colors
+        custom_colors=simplified_colors,
+        custom_order=simplified_order
     )
 
 

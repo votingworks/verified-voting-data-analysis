@@ -156,6 +156,9 @@ def find_duplicates_by_year(year):
 def generate_report():
     """Generate comprehensive report of duplicate equipment across all years."""
 
+    # Ensure output directory exists
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
     output_file = OUTPUT_DIR / 'duplicate_equipment_report.txt'
 
     with open(output_file, 'w', encoding='utf-8') as f:

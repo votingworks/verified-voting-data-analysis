@@ -161,6 +161,9 @@ def write_transitions(transitions, output_path):
         'Transition_Type', 'Years_Between',
     ]
 
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

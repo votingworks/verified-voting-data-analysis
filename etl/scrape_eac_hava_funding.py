@@ -149,6 +149,9 @@ def write_csv(data):
     """
     print(f"\nWriting data to {OUTPUT_FILE}...")
 
+    # Ensure output directory exists
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+
     fieldnames = ['State', 'Year', 'Grant', 'Federal_Funding', 'Required_State_Match']
 
     with open(OUTPUT_FILE, 'w', newline='', encoding='utf-8') as f:

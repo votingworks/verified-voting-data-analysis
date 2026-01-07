@@ -28,8 +28,9 @@ EQUIPMENT_FIGURES_DIR = PROJECT_ROOT / 'outputs' / 'figures' / 'equipment'
 FIGURES_DIR = EQUIPMENT_FIGURES_DIR / 'state_recency'
 REPORTS_DIR = PROJECT_ROOT / 'outputs' / 'reports'
 
-# Years to show on charts
-YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
+# Years to show on charts (includes "pre-2006" bucket for older equipment)
+CHART_YEARS = [2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
+CHART_LABELS = ['Pre-2006', '2006', '2008', '2010', '2012', '2014', '2016', '2018', '2020', '2022', '2024', '2026']
 
 # Transition types that count as "upgrades"
 UPGRADE_TYPES = {'vendor', 'system'}
@@ -73,29 +74,44 @@ def get_most_recent_upgrades(records):
     """
     Find the most recent upgrade year for each jurisdiction.
 
+    For jurisdictions that have upgraded, returns the year of most recent upgrade.
+    For jurisdictions that never upgraded, returns their baseline year (original
+    equipment installation date).
+
     Args:
         records: List of transition records
 
     Returns:
         dict: {fips: {'state': state, 'year': most_recent_upgrade_year, 'jurisdiction': name}}
     """
-    # Filter to upgrade transitions only
-    upgrades = [r for r in records if r['Transition_Type'] in UPGRADE_TYPES]
+    # Separate baseline and upgrade records
+    baselines = {}
+    upgrades = {}
 
-    # Group by FIPS, keep most recent
-    most_recent = {}
-    for row in upgrades:
+    for row in records:
         fips = row['FIPS']
         year = row['To_Year']
+        info = {
+            'state': row['State'],
+            'year': year,
+            'jurisdiction': row['Jurisdiction'],
+        }
 
-        if fips not in most_recent or year > most_recent[fips]['year']:
-            most_recent[fips] = {
-                'state': row['State'],
-                'year': year,
-                'jurisdiction': row['Jurisdiction'],
-            }
+        if row['Transition_Type'] == 'baseline':
+            baselines[fips] = info
+        elif row['Transition_Type'] in UPGRADE_TYPES:
+            if fips not in upgrades or year > upgrades[fips]['year']:
+                upgrades[fips] = info
 
-    return most_recent
+    # Use upgrade year if available, otherwise baseline year
+    result = {}
+    for fips in set(baselines.keys()) | set(upgrades.keys()):
+        if fips in upgrades:
+            result[fips] = upgrades[fips]
+        elif fips in baselines:
+            result[fips] = baselines[fips]
+
+    return result
 
 
 def group_by_state(most_recent):
@@ -124,20 +140,24 @@ def create_state_chart(state, years_list, output_path):
         years_list: List of most recent upgrade years for jurisdictions
         output_path: Path to save chart
     """
-    # Count by year
+    # Count by year, with pre-2006 bucket
     year_counts = defaultdict(int)
+    pre_2006_count = 0
     for year in years_list:
-        year_counts[year] += 1
+        if year < 2006:
+            pre_2006_count += 1
+        else:
+            year_counts[year] += 1
 
-    # Get counts for all standard years
-    counts = [year_counts.get(y, 0) for y in YEARS]
+    # Get counts: pre-2006 bucket + standard years
+    counts = [pre_2006_count] + [year_counts.get(y, 0) for y in CHART_YEARS]
 
     # Create figure
     fig, ax = plt.subplots(figsize=(12, 6))
 
     # Create bar chart with color gradient (older = red, newer = green)
-    colors = plt.cm.RdYlGn(np.linspace(0.1, 0.9, len(YEARS)))
-    bars = ax.bar(range(len(YEARS)), counts, color=colors,
+    colors = plt.cm.RdYlGn(np.linspace(0.1, 0.9, len(CHART_LABELS)))
+    bars = ax.bar(range(len(CHART_LABELS)), counts, color=colors,
                   edgecolor='black', linewidth=0.5)
 
     # Labels and title
@@ -153,8 +173,8 @@ def create_state_chart(state, years_list, output_path):
     ax.set_title(f'{title}\n{subtitle}', fontsize=14, fontweight='bold', pad=15)
 
     # X-axis labels
-    ax.set_xticks(range(len(YEARS)))
-    ax.set_xticklabels([str(y) for y in YEARS], rotation=45, ha='right')
+    ax.set_xticks(range(len(CHART_LABELS)))
+    ax.set_xticklabels(CHART_LABELS, rotation=45, ha='right')
 
     # Grid
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
@@ -187,20 +207,24 @@ def create_national_chart(most_recent, output_path):
     # Collect all years
     all_years = [data['year'] for data in most_recent.values()]
 
-    # Count by year
+    # Count by year, with pre-2006 bucket
     year_counts = defaultdict(int)
+    pre_2006_count = 0
     for year in all_years:
-        year_counts[year] += 1
+        if year < 2006:
+            pre_2006_count += 1
+        else:
+            year_counts[year] += 1
 
-    # Get counts for all standard years
-    counts = [year_counts.get(y, 0) for y in YEARS]
+    # Get counts: pre-2006 bucket + standard years
+    counts = [pre_2006_count] + [year_counts.get(y, 0) for y in CHART_YEARS]
 
     # Create figure
     fig, ax = plt.subplots(figsize=(14, 7))
 
     # Create bar chart with color gradient (older = red, newer = green)
-    colors = plt.cm.RdYlGn(np.linspace(0.1, 0.9, len(YEARS)))
-    bars = ax.bar(range(len(YEARS)), counts, color=colors,
+    colors = plt.cm.RdYlGn(np.linspace(0.1, 0.9, len(CHART_LABELS)))
+    bars = ax.bar(range(len(CHART_LABELS)), counts, color=colors,
                   edgecolor='black', linewidth=0.5)
 
     # Labels and title
@@ -216,8 +240,8 @@ def create_national_chart(most_recent, output_path):
     ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=15)
 
     # X-axis labels
-    ax.set_xticks(range(len(YEARS)))
-    ax.set_xticklabels([str(y) for y in YEARS], rotation=45, ha='right')
+    ax.set_xticks(range(len(CHART_LABELS)))
+    ax.set_xticklabels(CHART_LABELS, rotation=45, ha='right')
 
     # Grid
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)

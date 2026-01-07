@@ -209,6 +209,9 @@ def main():
     print("=" * 80)
     print()
 
+    # Ensure output directory exists early
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
     # Parse arguments
     if len(sys.argv) < 3:
         print("Usage: python3 marking_method_transitions.py <start_year> <end_year>")

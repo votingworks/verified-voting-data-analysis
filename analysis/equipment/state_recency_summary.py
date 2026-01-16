@@ -231,6 +231,14 @@ def calculate_state_summary(jurisdictions_2026, upgrade_years):
                          if classify_generation(j['equipment'],
                                                 j['voting_class']) == 'previous')
 
+        # Intersection: 2014 or earlier AND Dominion
+        n_2014_dominion = sum(1 for j in jurisdictions
+                              if j['upgrade_year'] and j['upgrade_year'] <= 2014
+                              and j['vendor'] == 'Dominion')
+        v_2014_dominion = sum(j['registered_voters'] for j in jurisdictions
+                              if j['upgrade_year'] and j['upgrade_year'] <= 2014
+                              and j['vendor'] == 'Dominion')
+
         # Calculate median upgrade year for jurisdictions with upgrade history
         years_with_upgrades = [j['upgrade_year'] for j in jurisdictions
                                if j['upgrade_year'] is not None]
@@ -252,6 +260,8 @@ def calculate_state_summary(jurisdictions_2026, upgrade_years):
             'upgrade_2012_voters': v_2012,
             'dominion': n_dominion,
             'dominion_voters': v_dominion,
+            'upgrade_2014_dominion': n_2014_dominion,
+            'upgrade_2014_dominion_voters': v_2014_dominion,
             'prev_gen': n_prev_gen,
             'prev_gen_voters': v_prev_gen,
         })
@@ -305,6 +315,9 @@ def write_csv(stats, output_path):
             'Dominion_Vendor_2026',
             'Dominion_Vendor_2026_Voters',
             'Dominion_Vendor_2026_Pct_Voters',
+            'Upgrade_2014_And_Dominion',
+            'Upgrade_2014_And_Dominion_Voters',
+            'Upgrade_2014_And_Dominion_Pct_Voters',
             'Previous_Gen_2026',
             'Previous_Gen_2026_Voters',
             'Previous_Gen_2026_Pct_Voters',
@@ -338,6 +351,9 @@ def write_csv(stats, output_path):
                 s['dominion'],
                 s['dominion_voters'],
                 pct(s['dominion_voters']),
+                s['upgrade_2014_dominion'],
+                s['upgrade_2014_dominion_voters'],
+                pct(s['upgrade_2014_dominion_voters']),
                 s['prev_gen'],
                 s['prev_gen_voters'],
                 pct(s['prev_gen_voters']),

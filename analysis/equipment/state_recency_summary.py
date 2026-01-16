@@ -44,7 +44,7 @@ CURRENT_GEN_PATTERNS = [
     'ExpressVote',         # ES&S BMD
     'Verity',              # Hart InterCivic Verity
     'Vanguard',            # Hart InterCivic Vanguard
-    'Unisyn OpenElect F',  # Unisyn Gen 2 (FVS, FVT)
+    'Unisyn OpenElect',    # Unisyn OpenElect family
     'Clear Ballot',        # Clear Ballot
     'VotingWorks',         # VotingWorks
     'VSAP',                # Los Angeles County VSAP
@@ -292,21 +292,32 @@ def write_csv(stats, output_path):
             'Median_Upgrade_Year',
             'Upgrade_2018_Or_Earlier',
             'Upgrade_2018_Or_Earlier_Voters',
+            'Upgrade_2018_Or_Earlier_Pct_Voters',
             'Upgrade_2016_Or_Earlier',
             'Upgrade_2016_Or_Earlier_Voters',
+            'Upgrade_2016_Or_Earlier_Pct_Voters',
             'Upgrade_2014_Or_Earlier',
             'Upgrade_2014_Or_Earlier_Voters',
+            'Upgrade_2014_Or_Earlier_Pct_Voters',
             'Upgrade_2012_Or_Earlier',
             'Upgrade_2012_Or_Earlier_Voters',
+            'Upgrade_2012_Or_Earlier_Pct_Voters',
             'Dominion_Vendor_2026',
             'Dominion_Vendor_2026_Voters',
+            'Dominion_Vendor_2026_Pct_Voters',
             'Previous_Gen_2026',
             'Previous_Gen_2026_Voters',
+            'Previous_Gen_2026_Pct_Voters',
         ])
 
         for s in stats:
             median_str = (f"{s['median_upgrade_year']:.0f}"
                           if s['median_upgrade_year'] else '')
+            total = s['total_voters']
+
+            def pct(v):
+                return f"{100 * v / total:.1f}" if total > 0 else ''
+
             writer.writerow([
                 s['state'],
                 s['total'],
@@ -314,16 +325,22 @@ def write_csv(stats, output_path):
                 median_str,
                 s['upgrade_2018'],
                 s['upgrade_2018_voters'],
+                pct(s['upgrade_2018_voters']),
                 s['upgrade_2016'],
                 s['upgrade_2016_voters'],
+                pct(s['upgrade_2016_voters']),
                 s['upgrade_2014'],
                 s['upgrade_2014_voters'],
+                pct(s['upgrade_2014_voters']),
                 s['upgrade_2012'],
                 s['upgrade_2012_voters'],
+                pct(s['upgrade_2012_voters']),
                 s['dominion'],
                 s['dominion_voters'],
+                pct(s['dominion_voters']),
                 s['prev_gen'],
                 s['prev_gen_voters'],
+                pct(s['prev_gen_voters']),
             ])
 
 
